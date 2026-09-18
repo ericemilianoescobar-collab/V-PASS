@@ -9,15 +9,6 @@ import { supabase, type Agency, type Event, type Validator, type Ticket } from '
 import { PLAN_FEATURES, whatsappLink } from '@/lib/constants';
 import { CreateEventModal, CreateValidatorModal, AddGuestModal, ReportModal } from '@/components/DashboardModals';
 
-/*
- * AgencyDashboard — panel de control del organizador/agencia.
- * Header: logo izquierda, "Bienvenido + nombre" y plan activo, cerrar sesión derecha.
- * Si no hay evento activo: botón "Crear evento".
- * Si hay evento activo (bloqueado): muestra el evento + botones para
- *   agregar invitados, crear validadores, ver reportes.
- * Sistema de plan: plan_active (1=activo, 0=usado) controla si puede crear eventos.
- */
-
 interface Props {
   agency: Agency;
   setAgency: (a: Agency | null) => void;
@@ -257,20 +248,59 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
               <div className="card p-12 text-center"><Users size={48} className="text-slate-600 mx-auto mb-3" /><p className="text-slate-400 mb-4">Sin invitados todavía</p><button onClick={() => setShowAddGuest(true)} className="btn-primary text-sm flex items-center gap-2 mx-auto"><Plus size={16} /> Agregar primer invitado</button></div>
             ) : (
               <div className="space-y-2 max-h-[60vh] overflow-y-auto">
-                {tickets.map(t => (
-                  <div key={t.id} className="card p-3 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-cyan-400/10 border border-cyan-400/20 flex items-center justify-center"><Users size={16} className="text-cyan-400" /></div>
-                      <div>
-                        <p className="text-sm font-semibold text-white">{t.attendee_name || 'Sin nombre'}</p>
-                        <p className="text-xs text-slate-500 font-mono">{t.code}</p>
+                {tickets.map(t => {
+                  const ticketUrl = `${window.location.origin}/#ticket=${t.code}`;
+                  const waMessage = encodeURIComponent(`¡Hola ${t.attendee_name || 'invitado'}! Tu entrada para ${activeEvent.name} ya está lista. Puedes ver tu código QR aquí: ${ticketUrl}`);
+                  const waLink = `https://wa.me/${t.phone ? t.phone.replace(/\D/g, '') : ''}?text=${waMessage}`;
+
+                  return (
+                    <div key={t.id} className="card p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-lg bg-cyan-400/10 border border-cyan-400/20 flex items-center justify-center shrink-0">
+                          <Users size={16} className="text-cyan-400" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-white">{t.attendee_name || 'Sin nombre'}</p>
+                          <p className="text-xs text-slate-500 font-mono">{t.code} {t.phone ? `• ${t.phone}` : ''}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+                        <span className={`badge ${t.status === 'valid' ? 'bg-green-500/10 text-green-300' : t.status === 'used' ? 'bg-blue-500/10 text-blue-300' : 'bg-red-500/10 text-red-300'}`}>
+                          {t.status === 'valid' ? 'Válida' : t.status === 'used' ? 'Ingresó' : 'Cancelada'}
+                        </span>
+
+                        <div className="flex items-center gap-1.5">
+                          {/* Botón Ver Ticket / QR */}
+                          <button
+                            onClick={() => navigate(`ticket?code=${t.code}`)}
+                            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 transition-colors"
+                            title="Ver entrada y código QR"
+                          >
+                            <QrCode size={16} />
+                          </button>
+
+                          {/* Botón WhatsApp */}
+                          <a
+                            href={t.phone ? waLink : '#'}
+                            onClick={(e) => {
+                              if (!t.phone) {
+                                e.preventDefault();
+                                alert('Este invitado no tiene un número de teléfono registrado.');
+                              }
+                            }}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={`p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-green-400 transition-colors ${!t.phone ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            title="Enviar por WhatsApp"
+                          >
+                            <MessageCircle size={16} />
+                          </a>
+                        </div>
                       </div>
                     </div>
-                    <span className={`badge ${t.status === 'valid' ? 'bg-green-500/10 text-green-300' : t.status === 'used' ? 'bg-blue-500/10 text-blue-300' : 'bg-red-500/10 text-red-300'}`}>
-                      {t.status === 'valid' ? 'Válida' : t.status === 'used' ? 'Ingresó' : 'Cancelada'}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
