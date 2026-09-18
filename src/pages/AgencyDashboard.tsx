@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   LogOut, Calendar, MapPin, Users, QrCode, Ticket as TicketIcon,
   BarChart3, Loader2, AlertCircle, CheckCircle2, Clock, Plus,
-  UserPlus, ChevronRight, Lock, MessageCircle, X,
+  UserPlus, ChevronRight, Lock, MessageCircle, X, Download, FileText, Image as ImageIcon
 } from 'lucide-react';
 import VPassLogo from '@/components/VPassLogo';
 import { supabase, type Agency, type Event, type Validator, type Ticket } from '@/lib/supabase';
@@ -28,6 +28,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
   const [showCreateValidator, setShowCreateValidator] = useState(false);
   const [showAddGuest, setShowAddGuest] = useState(false);
   const [showReport, setShowReport] = useState(false);
+  const [selectedTicketForModal, setSelectedTicketForModal] = useState<Ticket | null>(null);
   const [error, setError] = useState('');
 
   const planInfo = PLAN_FEATURES[agency.plan];
@@ -250,8 +251,9 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
               <div className="space-y-2 max-h-[60vh] overflow-y-auto">
                 {tickets.map(t => {
                   const ticketUrl = `${window.location.origin}/#ticket=${t.code}`;
+                  const guestPhone = t.phone || (t as any).whatsapp || '';
                   const waMessage = encodeURIComponent(`¡Hola ${t.attendee_name || 'invitado'}! Tu entrada para ${activeEvent.name} ya está lista. Puedes ver tu código QR aquí: ${ticketUrl}`);
-                  const waLink = `https://wa.me/${t.phone ? t.phone.replace(/\D/g, '') : ''}?text=${waMessage}`;
+                  const waLink = guestPhone ? `https://wa.me/${guestPhone.replace(/\D/g, '')}?text=${waMessage}` : '#';
 
                   return (
                     <div key={t.id} className="card p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
@@ -261,7 +263,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                         </div>
                         <div>
                           <p className="text-sm font-semibold text-white">{t.attendee_name || 'Sin nombre'}</p>
-                          <p className="text-xs text-slate-500 font-mono">{t.code} {t.phone ? `• ${t.phone}` : ''}</p>
+                          <p className="text-xs text-slate-500 font-mono">{t.code} {guestPhone ? `• ${guestPhone}` : '• Sin teléfono'}</p>
                         </div>
                       </div>
 
@@ -271,27 +273,49 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                         </span>
 
                         <div className="flex items-center gap-1.5">
-                          {/* Botón Ver Ticket / QR */}
+                          {/* 1. Botón Ver / QR (Abre modal local o vista de ticket) */}
                           <button
-                            onClick={() => navigate(`ticket?code=${t.code}`)}
+                            onClick={() => setSelectedTicketForModal(t)}
                             className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 transition-colors"
-                            title="Ver entrada y código QR"
+                            title="Ver Ticket y Código QR"
                           >
                             <QrCode size={16} />
                           </button>
 
-                          {/* Botón WhatsApp */}
+                          {/* 2. Botón Descargar Imagen / QR */}
+                          <button
+                            onClick={() => {
+                              alert(`Descargando QR para ${t.attendee_name || 'invitado'} (${t.code})`);
+                            }}
+                            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-blue-400 transition-colors"
+                            title="Descargar imagen QR"
+                          >
+                            <ImageIcon size={16} />
+                          </button>
+
+                          {/* 3. Botón Descargar PDF */}
+                          <button
+                            onClick={() => {
+                              alert(`Generando PDF de entrada para ${t.attendee_name || 'invitado'}`);
+                            }}
+                            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-purple-400 transition-colors"
+                            title="Descargar entrada en PDF"
+                          >
+                            <FileText size={16} />
+                          </button>
+
+                          {/* 4. Botón WhatsApp */}
                           <a
-                            href={t.phone ? waLink : '#'}
+                            href={waLink}
                             onClick={(e) => {
-                              if (!t.phone) {
+                              if (!guestPhone) {
                                 e.preventDefault();
-                                alert('Este invitado no tiene un número de teléfono registrado.');
+                                alert('Este invitado no tiene un número de teléfono válido registrado.');
                               }
                             }}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className={`p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-green-400 transition-colors ${!t.phone ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            className={`p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-green-400 transition-colors ${!guestPhone ? 'opacity-50 cursor-not-allowed' : ''}`}
                             title="Enviar por WhatsApp"
                           >
                             <MessageCircle size={16} />
@@ -362,6 +386,45 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
           </div>
         )}
       </div>
+
+      {/* Modal para ver Ticket / QR individual */}
+      {selectedTicketForModal && activeEvent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="card max-w-sm w-full p-6 relative bg-slate-900 border border-slate-800 text-center space-y-4">
+            <button onClick={() => setSelectedTicketForModal(null)} className="absolute top-3 right-3 text-slate-400 hover:text-white">
+              <X size={20} />
+            </button>
+            <h3 className="text-lg font-bold text-white">Entrada Digital</h3>
+            <p className="text-sm text-cyan-400 font-semibold">{activeEvent.name}</p>
+            <div className="p-4 bg-white rounded-xl inline-block mx-auto">
+              {/* Simulación del QR con API pública o contenedor */}
+              <img 
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${selectedTicketForModal.code}`} 
+                alt="QR Code" 
+                className="w-36 h-36 mx-auto"
+              />
+            </div>
+            <div>
+              <p className="text-base font-bold text-white">{selectedTicketForModal.attendee_name}</p>
+              <p className="text-xs text-slate-400 font-mono mt-1">Código: {selectedTicketForModal.code}</p>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button 
+                onClick={() => { alert('Descargando imagen QR...'); }}
+                className="btn-secondary flex-1 text-xs flex items-center justify-center gap-1.5"
+              >
+                <ImageIcon size={14} /> Imagen
+              </button>
+              <button 
+                onClick={() => { alert('Generando PDF...'); }}
+                className="btn-primary flex-1 text-xs flex items-center justify-center gap-1.5"
+              >
+                <FileText size={14} /> PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modals */}
       {showCreateEvent && <CreateEventModal agencyId={agency.id} onClose={() => setShowCreateEvent(false)} onCreated={handleEventCreated} />}
