@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   LogOut, Calendar, MapPin, Users, QrCode, Ticket as TicketIcon,
   BarChart3, Loader2, AlertCircle, CheckCircle2, Clock, Plus,
-  UserPlus, ChevronRight, Lock, MessageCircle, X, Download, FileText, Image as ImageIcon
+  UserPlus, ChevronRight, Lock, MessageCircle, X, Download, FileText, Image as ImageIcon, Trash2
 } from 'lucide-react';
 import VPassLogo from '@/components/VPassLogo';
 import { supabase, type Agency, type Event, type Validator, type Ticket } from '@/lib/supabase';
@@ -71,6 +71,17 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
     fetchValidators(ev.id);
     fetchTickets(ev.id);
     setTab('event');
+  };
+
+  // Función para eliminar invitado
+  const handleDeleteTicket = async (ticketId: string) => {
+    if (!confirm('¿Estás seguro de eliminar este invitado?')) return;
+    const { error: err } = await supabase.from('tickets').delete().eq('id', ticketId);
+    if (err) {
+      alert('Error al eliminar invitado');
+    } else {
+      setTickets(prev => prev.filter(t => t.id !== ticketId));
+    }
   };
 
   // Funciones de descarga e impresión reales
@@ -155,7 +166,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
         <div className="hidden sm:flex items-center gap-3">
           <span className="text-sm text-slate-300">Bienvenido, <span className="font-semibold text-white">{agency.agency_name}</span></span>
           <span className={`badge ${agency.plan_active ? 'bg-cyan-400/10 text-cyan-300 border border-cyan-400/20' : 'bg-slate-800 text-slate-500 border border-slate-700'}`}>
-            {planInfo.name} {agency.plan_active ? '✓ Activo' : 'Inactivo'}
+            {planInfo.name} ({agency.plan.toUpperCase()}) {agency.plan_active ? '✓ Activo' : 'Inactivo'}
           </span>
         </div>
         <button onClick={handleLogout} className="btn-ghost flex items-center gap-2 text-red-400 hover:text-red-300 text-sm">
@@ -198,16 +209,16 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
           <div className="space-y-6 animate-fade-in">
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <StatCard icon={Calendar} label="Eventos" value={events.length} color="cyan" />
-              <StatCard icon={TicketIcon} label="Invitados" value={tickets.length} color="blue" />
+              <StatCard icon={TicketIcon} label="Invitados" value={`${tickets.length} / ${agency.max_tickets || '∞'}`} color="blue" />
               <StatCard icon={CheckCircle2} label="Ingresaron" value={tickets.filter(t => t.status === 'used').length} color="green" />
-              <StatCard icon={Users} label="Validadores" value={validators.length} color="yellow" />
+              <StatCard icon={Users} label="Validadores" value={`${validators.length} / ${agency.max_validators}`} color="yellow" />
             </div>
 
             <div className="card p-6">
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h3 className="text-lg font-bold text-white">Tu plan</h3>
-                  <p className="text-sm text-slate-400">{planInfo.name} — {planInfo.price}</p>
+                  <h3 className="text-lg font-bold text-white">Tu plan actual: {planInfo.name}</h3>
+                  <p className="text-sm text-slate-400">Límite: {agency.max_tickets ? `${agency.max_tickets} entradas` : 'Entradas ilimitadas'} y {agency.max_validators} validadores.</p>
                 </div>
                 <span className={`badge ${agency.plan_active ? 'bg-green-500/10 text-green-300 border border-green-500/20' : 'bg-red-500/10 text-red-300 border border-red-500/20'}`}>
                   {agency.plan_active ? 'Activo' : 'Inactivo'}
@@ -216,11 +227,11 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
               <div className="grid sm:grid-cols-2 gap-3 text-sm">
                 <div className="flex items-center gap-2 text-slate-300">
                   <TicketIcon size={16} className="text-cyan-400" />
-                  {agency.max_tickets ? `${tickets.length} / ${agency.max_tickets} entradas` : 'Entradas ilimitadas'}
+                  Utilizadas: {tickets.length} de {agency.max_tickets || 'Ilimitadas'}
                 </div>
                 <div className="flex items-center gap-2 text-slate-300">
                   <Users size={16} className="text-blue-400" />
-                  {validators.length} / {agency.max_validators} validadores
+                  Validadores activos: {validators.length} / {agency.max_validators}
                 </div>
               </div>
             </div>
@@ -307,9 +318,26 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
         {tab === 'guests' && (
           <div className="space-y-4 animate-fade-in">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-white">Invitados ({tickets.length})</h3>
-              {activeEvent && <button onClick={() => setShowAddGuest(true)} className="btn-primary text-sm flex items-center gap-2"><Plus size={16} /> Agregar invitado</button>}
+              <div>
+                <h3 className="text-lg font-bold text-white">Invitados ({tickets.length} / {agency.max_tickets || 'Ilimitadas'})</h3>
+                <p className="text-xs text-slate-400">Límite de tu plan actual ({planInfo.name})</p>
+              </div>
+              {activeEvent && (
+                <button 
+                  onClick={() => {
+                    if (agency.max_tickets && tickets.length >= agency.max_tickets) {
+                      alert(`Has alcanzado el límite de ${agency.max_tickets} entradas de tu plan. Actualiza tu plan para agregar más.`);
+                      return;
+                    }
+                    setShowAddGuest(true);
+                  }} 
+                  className="btn-primary text-sm flex items-center gap-2"
+                >
+                  <Plus size={16} /> Agregar invitado
+                </button>
+              )}
             </div>
+
             {!activeEvent ? (
               <div className="card p-12 text-center"><Users size={48} className="text-slate-600 mx-auto mb-3" /><p className="text-slate-400">Crea un evento primero</p></div>
             ) : tickets.length === 0 ? (
@@ -317,9 +345,10 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
             ) : (
               <div className="space-y-2 max-h-[60vh] overflow-y-auto">
                 {tickets.map(t => {
+                  // Enlace directo estricto a la vista pública del ticket del invitado
                   const ticketUrl = `${window.location.origin}/#ticket=${t.code}`;
                   const guestPhone = t.phone || (t as any).whatsapp || '';
-                  const waMessage = encodeURIComponent(`¡Hola ${t.attendee_name || 'invitado'}! Tu entrada para ${activeEvent.name} ya está lista. Puedes ver tu código QR aquí: ${ticketUrl}`);
+                  const waMessage = encodeURIComponent(`¡Hola ${t.attendee_name || 'invitado'}! Tu entrada para ${activeEvent.name} está lista. Puedes ver y descargar tu QR aquí: ${ticketUrl}`);
                   const waLink = guestPhone ? `https://wa.me/${guestPhone.replace(/\D/g, '')}?text=${waMessage}` : `https://wa.me/?text=${waMessage}`;
 
                   return (
@@ -349,7 +378,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                             <QrCode size={16} />
                           </button>
 
-                          {/* 2. Botón Descargar Imagen / QR (Real) */}
+                          {/* 2. Botón Descargar Imagen / QR */}
                           <button
                             onClick={() => downloadQRCodeImage(t.code, t.attendee_name)}
                             className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-blue-400 transition-colors"
@@ -358,7 +387,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                             <ImageIcon size={16} />
                           </button>
 
-                          {/* 3. Botón Descargar PDF (Real) */}
+                          {/* 3. Botón Descargar PDF */}
                           <button
                             onClick={() => generateTicketPDF(t)}
                             className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-purple-400 transition-colors"
@@ -377,6 +406,15 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                           >
                             <MessageCircle size={16} />
                           </a>
+
+                          {/* 5. Botón Eliminar Invitado */}
+                          <button
+                            onClick={() => handleDeleteTicket(t.id)}
+                            className="p-2 rounded-lg bg-slate-800 hover:bg-red-950/40 text-red-400 transition-colors"
+                            title="Eliminar invitado"
+                          >
+                            <Trash2 size={16} />
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -391,8 +429,21 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
         {tab === 'validators' && (
           <div className="space-y-4 animate-fade-in">
             <div className="flex items-center justify-between">
-              <div><h3 className="text-lg font-bold text-white">Validadores</h3><p className="text-sm text-slate-400">{validators.length} / {agency.max_validators} usados</p></div>
-              {activeEvent && <button onClick={() => setShowCreateValidator(true)} className="btn-primary text-sm flex items-center gap-2"><UserPlus size={16} /> Crear validador</button>}
+              <div><h3 className="text-lg font-bold text-white">Validadores ({validators.length} / {agency.max_validators})</h3><p className="text-sm text-slate-400">Límite de tu plan</p></div>
+              {activeEvent && (
+                <button 
+                  onClick={() => {
+                    if (validators.length >= agency.max_validators) {
+                      alert(`Has alcanzado el límite de ${agency.max_validators} validadores de tu plan.`);
+                      return;
+                    }
+                    setShowCreateValidator(true);
+                  }} 
+                  className="btn-primary text-sm flex items-center gap-2"
+                >
+                  <UserPlus size={16} /> Crear validador
+                </button>
+              )}
             </div>
             {!activeEvent ? (
               <div className="card p-12 text-center"><Users size={48} className="text-slate-600 mx-auto mb-3" /><p className="text-slate-400">Crea un evento primero</p></div>
@@ -437,7 +488,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
             )}
             {agency.plan !== 'premium' && (
               <div className="card p-4 flex items-center gap-2 text-sm text-slate-400">
-                <Lock size={16} className="text-yellow-400" /> Reporte detallado descargable (PDF) disponible solo en Plan Premium
+                <Lock size={16} className="text-yellow-400" /> Reporte detallado descargable (PDF) disponible solo en Plan Premium (S/ 250)
               </div>
             )}
           </div>
@@ -491,7 +542,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
   );
 }
 
-function StatCard({ icon: Icon, label, value, color }: { icon: any; label: string; value: number; color: string }) {
+function StatCard({ icon: Icon, label, value, color }: { icon: any; label: string; value: string | number; color: string }) {
   const colors: Record<string, string> = {
     cyan: 'text-cyan-400 bg-cyan-400/10 border-cyan-400/20',
     blue: 'text-blue-400 bg-blue-400/10 border-blue-400/20',
