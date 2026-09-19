@@ -73,6 +73,73 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
     setTab('event');
   };
 
+  // Funciones de descarga e impresión reales
+  const downloadQRCodeImage = async (ticketCode: string, attendeeName: string) => {
+    try {
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${ticketCode}`;
+      const response = await fetch(qrUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `QR-${attendeeName || 'invitado'}-${ticketCode}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Error al descargar imagen QR:", err);
+      alert("No se pudo descargar la imagen del QR.");
+    }
+  };
+
+  const generateTicketPDF = (t: Ticket) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Por favor, permite las ventanas emergentes para generar el PDF.");
+      return;
+    }
+
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${t.code}`;
+    const eventName = activeEvent?.name || 'Evento V-PASS';
+    const eventDate = activeEvent?.event_date || '';
+    const eventLocation = activeEvent?.location || '';
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Entrada - ${t.attendee_name}</title>
+          <style>
+            body { font-family: Arial, sans-serif; background: #0f172a; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+            .ticket { background: #1e293b; border: 2px solid #38bdf8; border-radius: 16px; padding: 24px; text-align: center; width: 320px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+            h2 { color: #38bdf8; margin-bottom: 5px; }
+            p { margin: 8px 0; color: #94a3b8; font-size: 14px; }
+            .name { font-size: 20px; font-weight: bold; color: #fff; margin: 12px 0; }
+            .code { font-family: monospace; background: #0f172a; padding: 6px 12px; border-radius: 8px; color: #38bdf8; display: inline-block; margin-top: 8px; }
+            .qr-box { background: #fff; padding: 12px; border-radius: 12px; display: inline-block; margin: 15px 0; }
+            img { width: 160px; height: 160px; display: block; }
+          </style>
+        </head>
+        <body>
+          <div class="ticket">
+            <h2>V-PASS TICKET</h2>
+            <p>${eventName}</p>
+            <div class="qr-box">
+              <img src="${qrUrl}" />
+            </div>
+            <div class="name">${t.attendee_name || 'Invitado'}</div>
+            <p>📅 ${eventDate} | 📍 ${eventLocation}</p>
+            <div class="code">Código: ${t.code}</div>
+          </div>
+          <script>
+            window.onload = function() { window.print(); }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   const canCreateEvent = agency.plan_active && !activeEvent;
 
   return (
@@ -251,6 +318,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
               <div className="space-y-2 max-h-[60vh] overflow-y-auto">
                 {tickets.map(t => {
                   const ticketUrl = `${window.location.origin}/#ticket=${t.code}`;
+                  // Se unifica la lectura del teléfono para que coincida con t.phone o t.whatsapp
                   const guestPhone = t.phone || (t as any).whatsapp || '';
                   const waMessage = encodeURIComponent(`¡Hola ${t.attendee_name || 'invitado'}! Tu entrada para ${activeEvent.name} ya está lista. Puedes ver tu código QR aquí: ${ticketUrl}`);
                   const waLink = guestPhone ? `https://wa.me/${guestPhone.replace(/\D/g, '')}?text=${waMessage}` : '#';
@@ -273,7 +341,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                         </span>
 
                         <div className="flex items-center gap-1.5">
-                          {/* 1. Botón Ver / QR (Abre modal local o vista de ticket) */}
+                          {/* 1. Botón Ver / QR */}
                           <button
                             onClick={() => setSelectedTicketForModal(t)}
                             className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 transition-colors"
@@ -282,22 +350,18 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                             <QrCode size={16} />
                           </button>
 
-                          {/* 2. Botón Descargar Imagen / QR */}
+                          {/* 2. Botón Descargar Imagen / QR (Real) */}
                           <button
-                            onClick={() => {
-                              alert(`Descargando QR para ${t.attendee_name || 'invitado'} (${t.code})`);
-                            }}
+                            onClick={() => downloadQRCodeImage(t.code, t.attendee_name)}
                             className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-blue-400 transition-colors"
                             title="Descargar imagen QR"
                           >
                             <ImageIcon size={16} />
                           </button>
 
-                          {/* 3. Botón Descargar PDF */}
+                          {/* 3. Botón Descargar PDF (Real) */}
                           <button
-                            onClick={() => {
-                              alert(`Generando PDF de entrada para ${t.attendee_name || 'invitado'}`);
-                            }}
+                            onClick={() => generateTicketPDF(t)}
                             className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-purple-400 transition-colors"
                             title="Descargar entrada en PDF"
                           >
@@ -397,7 +461,6 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
             <h3 className="text-lg font-bold text-white">Entrada Digital</h3>
             <p className="text-sm text-cyan-400 font-semibold">{activeEvent.name}</p>
             <div className="p-4 bg-white rounded-xl inline-block mx-auto">
-              {/* Simulación del QR con API pública o contenedor */}
               <img 
                 src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${selectedTicketForModal.code}`} 
                 alt="QR Code" 
@@ -410,13 +473,13 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
             </div>
             <div className="flex gap-2 pt-2">
               <button 
-                onClick={() => { alert('Descargando imagen QR...'); }}
+                onClick={() => downloadQRCodeImage(selectedTicketForModal.code, selectedTicketForModal.attendee_name)}
                 className="btn-secondary flex-1 text-xs flex items-center justify-center gap-1.5"
               >
                 <ImageIcon size={14} /> Imagen
               </button>
               <button 
-                onClick={() => { alert('Generando PDF...'); }}
+                onClick={() => generateTicketPDF(selectedTicketForModal)}
                 className="btn-primary flex-1 text-xs flex items-center justify-center gap-1.5"
               >
                 <FileText size={14} /> PDF
