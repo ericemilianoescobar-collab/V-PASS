@@ -318,10 +318,9 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
               <div className="space-y-2 max-h-[60vh] overflow-y-auto">
                 {tickets.map(t => {
                   const ticketUrl = `${window.location.origin}/#ticket=${t.code}`;
-                  // Se unifica la lectura del teléfono para que coincida con t.phone o t.whatsapp
                   const guestPhone = t.phone || (t as any).whatsapp || '';
                   const waMessage = encodeURIComponent(`¡Hola ${t.attendee_name || 'invitado'}! Tu entrada para ${activeEvent.name} ya está lista. Puedes ver tu código QR aquí: ${ticketUrl}`);
-                  const waLink = guestPhone ? `https://wa.me/${guestPhone.replace(/\D/g, '')}?text=${waMessage}` : '#';
+                  const waLink = guestPhone ? `https://wa.me/${guestPhone.replace(/\D/g, '')}?text=${waMessage}` : `https://wa.me/?text=${waMessage}`;
 
                   return (
                     <div key={t.id} className="card p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
@@ -371,15 +370,9 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                           {/* 4. Botón WhatsApp */}
                           <a
                             href={waLink}
-                            onClick={(e) => {
-                              if (!guestPhone) {
-                                e.preventDefault();
-                                alert('Este invitado no tiene un número de teléfono válido registrado.');
-                              }
-                            }}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className={`p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-green-400 transition-colors ${!guestPhone ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-green-400 transition-colors"
                             title="Enviar por WhatsApp"
                           >
                             <MessageCircle size={16} />
