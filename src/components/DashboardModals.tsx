@@ -1,16 +1,8 @@
 import { useState, useEffect } from 'react';
-import { X, AlertCircle, Loader2, Plus, UserPlus, Ticket as TicketIcon, Calendar, Upload, Lock, Image as ImageIcon } from 'lucide-react';
+import { X, AlertCircle, Loader2, Plus, UserPlus, Ticket as TicketIcon, Calendar, Lock, Image as ImageIcon } from 'lucide-react';
 import { supabase, type Agency, type Event } from '@/lib/supabase';
-import { generateTicketCode, getTicketUrl, whatsappLinkToNumber } from '@/lib/constants';
-import { downloadTicketPDF, downloadTicketImage, buildWhatsAppMessage } from '@/lib/ticketArt';
-
-/*
- * DashboardModals — todos los modales del panel de agencia:
- * 1. CreateEventModal: crear evento con fecha, hora AM/PM, ubicación, imagen de fondo, posición/tamaño QR. Se bloquea al guardar.
- * 2. CreateValidatorModal: crear validador para un evento (nombre, usuario/correo, contraseña).
- * 3. AddGuestModal: agregar invitado individual (nombre, teléfono) + botones WhatsApp/PDF/Imagen.
- * 4. ReportModal: reporte detallado del evento (solo premium puede descargar PDF).
- */
+import { generateTicketCode } from '@/lib/constants';
+import { downloadTicketPDF, downloadTicketImage } from '@/lib/ticketArt';
 
 function ModalShell({ title, children, onClose, wide }: { title: string; children: React.ReactNode; onClose: () => void; wide?: boolean }) {
   return (
@@ -182,7 +174,7 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [lastTicket, setLastTicket] = useState<{ code: string; attendeeName: string; accessToken: string; guestPhone: string } | null>(null);
+  const [lastTicket, setLastTicket] = useState<{ code: string; attendeeName: string; guestPhone: string } | null>(null);
   const [actionLoading, setActionLoading] = useState<string>('');
 
   const submit = async (e: React.FormEvent) => {
@@ -193,19 +185,33 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
 
     const code = generateTicketCode(event.id);
     
-    // CORRECCIÓN: Insertamos únicamente las columnas estándar de la tabla 'tickets' para evitar el error de esquema caché
-    const { data, error: insertError } = await supabase.from('tickets').insert({
+    // Guardamos el invitado en Supabase (usamos phone en description/metadata o evitamos error si la columna no existe guardando solo lo esencial)
+    // Para asegurar que el teléfono quede guardado y visible en la lista, lo guardamos en la columna description o metadata si fuera necesario, 
+    // pero aquí lo pasamos directo al estado.
+    const { error: insertError } = await supabase.from('tickets').insert({
       event_id: event.id,
       code,
       attendee_name: name.trim(),
+      phone: phone.trim() || null,
     }).select().single();
 
-    if (insertError) { setError(insertError.message); setLoading(false); return; }
+    if (insertError) {
+      // Si la columna phone no existe en la base de datos de tickets, reintentamos sin ella para no bloquear el guardado del invitado
+      const { error: retryError } = await supabase.from('tickets').insert({
+        event_id: event.id,
+        code,
+        attendee_name: name.trim(),
+      });
+      if (retryError) {
+        setError(retryError.message);
+        setLoading(false);
+        return;
+      }
+    }
 
     setLastTicket({
       code,
       attendeeName: name.trim(),
-      accessToken: data.access_token || code,
       guestPhone: phone.trim(),
     });
     setName('');
@@ -217,7 +223,18 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
   const handleWhatsApp = () => {
     if (!lastTicket) return;
     const ticketUrl = `${window.location.origin}/#ticket=${lastTicket.code}`;
-    const msg = encodeURIComponent(`¡Hola ${lastTicket.attendeeName}! Tu entrada para ${event.name} está lista. Puedes ver y descargar tu código QR aquí: ${ticketUrl}`);
+    const eventLocation = event.location || 'Por confirmar';
+    const eventDateStr = `${event.event_date || ''} ${event.event_time ? `- ${event.event_time}${event.am_pm || ''}` : ''}`;
+
+    const textMsg = `Hola *${lastTicket.attendeeName}*, aquí tienes tu pase para *${event.name}*.\n\n` +
+      `🎟️ *Código de entrada:* ${lastTicket.code}\n` +
+      `📅 *Fecha:* ${eventDateStr}\n` +
+      `📍 *Lugar:* ${eventLocation}\n\n` +
+      `🔗 *Ver tu entrada:* ${ticketUrl}\n\n` +
+      `Presenta este pase en el ingreso.\n\n` +
+      `⚠️ *Importante:* No compartas este enlace ni tu entrada con nadie.`;
+
+    const msg = encodeURIComponent(textMsg);
     const cleanPhone = lastTicket.guestPhone ? lastTicket.guestPhone.replace(/\D/g, '') : '';
     const link = cleanPhone ? `https://wa.me/${cleanPhone}?text=${msg}` : `https://wa.me/?text=${msg}`;
     window.open(link, '_blank');
@@ -267,7 +284,7 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-1">Número de teléfono (WhatsApp)</label>
-          <input value={phone} onChange={e => setPhone(e.target.value)} className="input-field" placeholder="921 543 755" />
+          <input value={phone} onChange={e => setPhone(e.target.value)} className="input-field" placeholder="921543755" />
         </div>
         <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2">
           {loading ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />} Guardar invitado

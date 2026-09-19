@@ -345,11 +345,24 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
             ) : (
               <div className="space-y-2 max-h-[60vh] overflow-y-auto">
                 {tickets.map(t => {
-                  // Enlace directo estricto a la vista pública del ticket del invitado
+                  // Enlace exclusivo público al ticket individual del invitado (sin acceso al panel)
                   const ticketUrl = `${window.location.origin}/#ticket=${t.code}`;
                   const guestPhone = t.phone || (t as any).whatsapp || '';
-                  const waMessage = encodeURIComponent(`¡Hola ${t.attendee_name || 'invitado'}! Tu entrada para ${activeEvent.name} está lista. Puedes ver y descargar tu QR aquí: ${ticketUrl}`);
-                  const waLink = guestPhone ? `https://wa.me/${guestPhone.replace(/\D/g, '')}?text=${waMessage}` : `https://wa.me/?text=${waMessage}`;
+                  
+                  const eventLocation = activeEvent?.location || 'Por confirmar';
+                  const eventDateStr = `${activeEvent?.event_date || ''} ${activeEvent?.event_time ? `- ${activeEvent.event_time}${activeEvent.am_pm || ''}` : ''}`;
+
+                  const textMsg = `Hola *${t.attendee_name || 'invitado'}*, aquí tienes tu pase para *${activeEvent?.name || 'el evento'}*.\n\n` +
+                    `🎟️ *Código de entrada:* ${t.code}\n` +
+                    `📅 *Fecha:* ${eventDateStr}\n` +
+                    `📍 *Lugar:* ${eventLocation}\n\n` +
+                    `🔗 *Ver tu entrada:* ${ticketUrl}\n\n` +
+                    `Presenta este pase en el ingreso.\n\n` +
+                    `⚠️ *Importante:* No compartas este enlace ni tu entrada con nadie.`;
+
+                  const waMessage = encodeURIComponent(textMsg);
+                  const cleanPhone = guestPhone ? guestPhone.replace(/\D/g, '') : '';
+                  const waLink = cleanPhone ? `https://wa.me/${cleanPhone}?text=${waMessage}` : `https://wa.me/?text=${waMessage}`;
 
                   return (
                     <div key={t.id} className="card p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
@@ -359,7 +372,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                         </div>
                         <div>
                           <p className="text-sm font-semibold text-white">{t.attendee_name || 'Sin nombre'}</p>
-                          <p className="text-xs text-slate-500 font-mono">{t.code} {guestPhone ? `• ${guestPhone}` : '• Sin teléfono'}</p>
+                          <p className="text-xs text-slate-500 font-mono">{t.code} {guestPhone ? `• Tel: ${guestPhone}` : '• Sin teléfono'}</p>
                         </div>
                       </div>
 
