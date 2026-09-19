@@ -8,7 +8,7 @@ import { downloadTicketPDF, downloadTicketImage, buildWhatsAppMessage } from '@/
  * DashboardModals — todos los modales del panel de agencia:
  * 1. CreateEventModal: crear evento con fecha, hora AM/PM, ubicación, imagen de fondo, posición/tamaño QR. Se bloquea al guardar.
  * 2. CreateValidatorModal: crear validador para un evento (nombre, usuario/correo, contraseña).
- * 3. AddGuestModal: agregar invitado individual (nombre, teléfono opcional) + botones WhatsApp/PDF/Imagen.
+ * 3. AddGuestModal: agregar invitado individual (nombre, teléfono) + botones WhatsApp/PDF/Imagen.
  * 4. ReportModal: reporte detallado del evento (solo premium puede descargar PDF).
  */
 
@@ -98,12 +98,12 @@ export function CreateEventModal({ agencyId, onClose, onCreated }: { agencyId: s
           <input value={location} onChange={e => setLocation(e.target.value)} className="input-field" placeholder="Lugar del evento" />
         </div>
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-1">Imagen de fondo (URL, opcional)</label>
+          <label className="block text-sm font-medium text-slate-300 mb-1">Imagen de fondo (URL o enlace de imagen)</label>
           <div className="flex items-center gap-2">
             <ImageIcon size={18} className="text-slate-500 shrink-0" />
             <input value={bgImageUrl} onChange={e => setBgImageUrl(e.target.value)} className="input-field" placeholder="https://..." />
           </div>
-          <p className="text-xs text-slate-500 mt-1">Se mostrará como fondo en las invitadas de los invitados</p>
+          <p className="text-xs text-slate-500 mt-1">Se mostrará como fondo en las entradas digitales de los invitados</p>
         </div>
         <div className="grid grid-cols-3 gap-3">
           <div>
@@ -192,10 +192,13 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
     setError('');
 
     const code = generateTicketCode(event.id);
+    
+    // CORRECCIÓN: Guardamos tanto en 'phone' como en 'guest_phone' para asegurar compatibilidad absoluta con Supabase
     const { data, error: insertError } = await supabase.from('tickets').insert({
       event_id: event.id,
       code,
       attendee_name: name.trim(),
+      phone: phone.trim() || null,
       guest_phone: phone.trim() || null,
     }).select().single();
 
@@ -204,7 +207,7 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
     setLastTicket({
       code,
       attendeeName: name.trim(),
-      accessToken: data.access_token,
+      accessToken: data.access_token || code,
       guestPhone: phone.trim(),
     });
     setName('');
@@ -215,9 +218,11 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
 
   const handleWhatsApp = () => {
     if (!lastTicket) return;
-    const url = getTicketUrl(lastTicket.accessToken);
-    const msg = buildWhatsAppMessage(lastTicket.attendeeName, event.name, url);
-    window.open(whatsappLinkToNumber(lastTicket.guestPhone, msg), '_blank');
+    const ticketUrl = `${window.location.origin}/#ticket=${lastTicket.code}`;
+    const msg = encodeURIComponent(`¡Hola ${lastTicket.attendeeName}! Tu entrada para ${event.name} está lista. Puedes ver y descargar tu código QR aquí: ${ticketUrl}`);
+    const cleanPhone = lastTicket.guestPhone ? lastTicket.guestPhone.replace(/\D/g, '') : '';
+    const link = cleanPhone ? `https://wa.me/${cleanPhone}?text=${msg}` : `https://wa.me/?text=${msg}`;
+    window.open(link, '_blank');
   };
 
   const handlePDF = async () => {
@@ -263,7 +268,7 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
           <input value={name} onChange={e => setName(e.target.value)} required className="input-field" placeholder="Juan Pérez" />
         </div>
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-1">Número (opcional)</label>
+          <label className="block text-sm font-medium text-slate-300 mb-1">Número de teléfono (WhatsApp)</label>
           <input value={phone} onChange={e => setPhone(e.target.value)} className="input-field" placeholder="921 543 755" />
         </div>
         <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2">
@@ -277,9 +282,9 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
             <TicketIcon size={18} className="text-cyan-400" />
             <p className="font-semibold text-white">{lastTicket.attendeeName}</p>
           </div>
-          <p className="text-xs text-slate-500 font-mono mb-3">{lastTicket.code}</p>
+          <p className="text-xs text-slate-500 font-mono mb-3">Código: {lastTicket.code} {lastTicket.guestPhone ? `• Tel: ${lastTicket.guestPhone}` : ''}</p>
           <div className="flex gap-2">
-            <button onClick={handleWhatsApp} disabled={!lastTicket.guestPhone} className="flex-1 px-3 py-2.5 rounded-xl font-semibold text-sm bg-green-500/10 text-green-300 border border-green-500/20 hover:bg-green-500/20 transition-all disabled:opacity-40 flex items-center justify-center gap-1.5">
+            <button onClick={handleWhatsApp} className="flex-1 px-3 py-2.5 rounded-xl font-semibold text-sm bg-green-500/10 text-green-300 border border-green-500/20 hover:bg-green-500/20 transition-all flex items-center justify-center gap-1.5">
               WhatsApp
             </button>
             <button onClick={handlePDF} disabled={!!actionLoading} className="flex-1 px-3 py-2.5 rounded-xl font-semibold text-sm bg-red-500/10 text-red-300 border border-red-500/20 hover:bg-red-500/20 transition-all disabled:opacity-40 flex items-center justify-center gap-1.5">
@@ -289,7 +294,6 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
               {actionLoading === 'img' ? <Loader2 size={14} className="animate-spin" /> : 'Imagen'}
             </button>
           </div>
-          {!lastTicket.guestPhone && <p className="text-xs text-slate-500 mt-2">Sin número de WhatsApp. Usa PDF o Imagen para enviar manualmente.</p>}
         </div>
       )}
     </ModalShell>
@@ -322,7 +326,7 @@ export function ReportModal({ event, agency, onClose }: { event: Event; agency: 
     pdf.setTextColor(255, 255, 255); pdf.setFontSize(16);
     pdf.text(report.event_name || event.name, 105, 50, { align: 'center' });
     pdf.setFontSize(12); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(148, 163, 184);
-    pdf.text(`Fecha: ${report.event_date || event.event_date}${report.event_time ? ` - ${report.event_time} ${report.am_pm || ''}` : ''}`, 105, 62, { align: 'center' });
+    pdf.text(`Fecha: ${report.event_date || event.event_date}${report.event_time ? ` - ${report.event_time}${report.am_pm || ''}` : ''}`, 105, 62, { align: 'center' });
     if (report.location) pdf.text(`Ubicacion: ${report.location}`, 105, 72, { align: 'center' });
     pdf.setDrawColor(34, 211, 238); pdf.line(30, 85, 180, 85);
     pdf.setTextColor(255, 255, 255); pdf.setFontSize(14); pdf.setFont('helvetica', 'bold');
@@ -376,7 +380,7 @@ export function ReportModal({ event, agency, onClose }: { event: Event; agency: 
             </button>
           ) : (
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-700 text-slate-400 text-sm">
-              <Lock size={14} /> Descarga de PDF disponible solo en Plan Premium
+              <Lock size={14} /> Descarga de PDF disponible solo en Plan Premium (S/ 250)
             </div>
           )}
         </div>
@@ -396,5 +400,3 @@ function ReportStat({ label, value, color }: { label: string; value: number; col
     </div>
   );
 }
-
-
