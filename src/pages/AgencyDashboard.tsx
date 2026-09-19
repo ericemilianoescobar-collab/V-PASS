@@ -73,7 +73,6 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
     setTab('event');
   };
 
-  // Función para eliminar invitado
   const handleDeleteTicket = async (ticketId: string) => {
     if (!confirm('¿Estás seguro de eliminar este invitado?')) return;
     const { error: err } = await supabase.from('tickets').delete().eq('id', ticketId);
@@ -84,7 +83,6 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
     }
   };
 
-  // Funciones de descarga e impresión reales
   const downloadQRCodeImage = async (ticketCode: string, attendeeName: string) => {
     try {
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${ticketCode}`;
@@ -292,7 +290,6 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                   <div className="flex items-center gap-2 text-sm"><MapPin size={16} className="text-green-400" /><div><p className="text-slate-500 text-xs">Ubicación</p><p className="text-white">{activeEvent.location || 'Sin especificar'}</p></div></div>
                 </div>
 
-                {/* Editor interactivo de diseño de entrada con previsualización */}
                 <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-4">
                   <h4 className="text-sm font-semibold text-white">Configuración Visual de la Entrada</h4>
                   <div>
@@ -331,7 +328,6 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                     </div>
                   </div>
 
-                  {/* Previsualización en Vivo */}
                   <div className="space-y-1">
                     <p className="text-xs text-slate-400">Previsualización del diseño:</p>
                     <div 
@@ -401,7 +397,6 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                     <button onClick={() => setShowReport(true)} className="btn-secondary text-sm flex items-center gap-2"><BarChart3 size={16} /> Reporte</button>
                   </div>
 
-                  {/* Botón Eliminar Evento con la advertencia exacta solicitada */}
                   <button 
                     onClick={async () => {
                       if (confirm('Importante, si eliminas este evento no tendrás forma de recuperarlo y no es reembolsable.')) {
@@ -464,6 +459,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
             ) : (
               <div className="space-y-2 max-h-[60vh] overflow-y-auto">
                 {tickets.map(t => {
+                  // Enlace explícito y aislado para el ticket del invitado con hash #ticket/
                   const ticketUrl = `${window.location.origin}/#ticket/${t.code}`;
                   const guestPhone = t.phone || (t as any).whatsapp || '';
                   
@@ -621,7 +617,6 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
         )}
       </div>
 
-      {/* Modal para ver Ticket / QR individual */}
       {selectedTicketForModal && activeEvent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
           <div className="card max-w-sm w-full p-6 relative bg-slate-900 border border-slate-800 text-center space-y-4">
@@ -659,7 +654,6 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
         </div>
       )}
 
-      {/* Modals */}
       {showCreateEvent && <CreateEventModal agencyId={agency.id} onClose={() => setShowCreateEvent(false)} onCreated={handleEventCreated} />}
       {showCreateValidator && activeEvent && <CreateValidatorModal eventId={activeEvent.id} onClose={() => setShowCreateValidator(false)} onCreated={() => { setShowCreateValidator(false); fetchValidators(activeEvent.id); }} />}
       {showAddGuest && activeEvent && <AddGuestModal event={activeEvent} onClose={() => setShowAddGuest(false)} onAdded={() => fetchTickets(activeEvent.id)} />}

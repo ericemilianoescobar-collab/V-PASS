@@ -35,7 +35,6 @@ export function CreateEventModal({ agencyId, onClose, onCreated }: { agencyId: s
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Función corregida para subida de imagen local con sintaxis limpia
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -124,7 +123,6 @@ export function CreateEventModal({ agencyId, onClose, onCreated }: { agencyId: s
           <input value={location} onChange={e => setLocation(e.target.value)} className="input-field" placeholder="Lugar del evento" />
         </div>
 
-        {/* Subida de Imagen Local y Previsualización */}
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-1">Imagen de fondo del ticket</label>
           <div className="flex items-center gap-3">
@@ -143,7 +141,6 @@ export function CreateEventModal({ agencyId, onClose, onCreated }: { agencyId: s
           />
         </div>
 
-        {/* Previsualización en Tiempo Real */}
         <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
           <p className="text-xs font-semibold text-slate-400">Previsualización en vivo:</p>
           <div 
@@ -254,34 +251,27 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
     setError('');
 
     const code = generateTicketCode(event.id);
-    const cleanPhoneVal = phone.trim() || null;
+    const cleanPhoneVal = phone.trim() || '';
     
-    // Guardado robusto duplicando en phone y whatsapp para garantizar compatibilidad
+    // Guardamos explícitamente en phone y whatsapp
     const { error: insertError } = await supabase.from('tickets').insert({
       event_id: event.id,
       code,
       attendee_name: name.trim(),
       phone: cleanPhoneVal,
       whatsapp: cleanPhoneVal,
-    }).select().single();
+    });
 
     if (insertError) {
-      const { error: retryError } = await supabase.from('tickets').insert({
-        event_id: event.id,
-        code,
-        attendee_name: name.trim(),
-      });
-      if (retryError) {
-        setError(retryError.message);
-        setLoading(false);
-        return;
-      }
+      setError(insertError.message);
+      setLoading(false);
+      return;
     }
 
     setLastTicket({
       code,
       attendeeName: name.trim(),
-      guestPhone: phone.trim(),
+      guestPhone: cleanPhoneVal,
     });
     setName('');
     setPhone('');
@@ -291,9 +281,10 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
 
   const handleWhatsApp = () => {
     if (!lastTicket) return;
+    // Enlace estrictamente aislado al ticket individual del invitado usando hash #ticket/
     const ticketUrl = `${window.location.origin}/#ticket/${lastTicket.code}`;
     const eventLocation = event.location || 'Por confirmar';
-    const eventDateStr = `${event.event_date || ''} ${event.event_time ? `- ${event.event_time}${event.am_pm || ''}` : ''}`;
+    const eventDateStr = `${event.event_date || ''} ${event.event_time ? `- ${event.event_time} ${event.am_pm || ''}` : ''}`;
 
     const textMsg = `Hola *${lastTicket.attendeeName}*, aquí tienes tu pase para *${event.name}*.\n\n` +
       `🎟️ *Código de entrada:* ${lastTicket.code}\n` +
