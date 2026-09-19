@@ -35,7 +35,7 @@ export function CreateEventModal({ agencyId, onClose, onCreated }: { agencyId: s
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Función para subir archivo de imagen local a Supabase Storage
+  // Función corregida para subida de imagen local con sintaxis limpia
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -44,12 +44,12 @@ export function CreateEventModal({ agencyId, onClose, onCreated }: { agencyId: s
 
     try {
       const fileExt = file.name.split('.').pop();
-      const fileName = `${Math.random().toString(36.substring(2))}-${Date.now()}.${fileExt}`;
+      const randomStr = Math.random().toString(36).substring(2);
+      const fileName = `${randomStr}-${Date.now()}.${fileExt}`;
       const filePath = `event-bg/${fileName}`;
 
       const { error: uploadErr } = await supabase.storage.from('event-assets').upload(filePath, file);
       if (uploadErr) {
-        // Si no existe el bucket event-assets, intentamos base64 o informamos
         const reader = new FileReader();
         reader.onloadend = () => {
           setBgImageUrl(reader.result as string);
@@ -256,7 +256,7 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
     const code = generateTicketCode(event.id);
     const cleanPhoneVal = phone.trim() || null;
     
-    // Guardamos explícitamente tanto en phone como en whatsapp para evitar pérdida de datos
+    // Guardado robusto duplicando en phone y whatsapp para garantizar compatibilidad
     const { error: insertError } = await supabase.from('tickets').insert({
       event_id: event.id,
       code,
@@ -266,7 +266,6 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
     }).select().single();
 
     if (insertError) {
-      // Reintento si alguna columna específica no existiera en la DB
       const { error: retryError } = await supabase.from('tickets').insert({
         event_id: event.id,
         code,
