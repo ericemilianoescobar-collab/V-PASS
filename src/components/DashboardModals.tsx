@@ -193,13 +193,11 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
 
     const code = generateTicketCode(event.id);
     
-    // CORRECCIÓN: Guardamos tanto en 'phone' como en 'guest_phone' para asegurar compatibilidad absoluta con Supabase
+    // CORRECCIÓN: Insertamos únicamente las columnas estándar de la tabla 'tickets' para evitar el error de esquema caché
     const { data, error: insertError } = await supabase.from('tickets').insert({
       event_id: event.id,
       code,
       attendee_name: name.trim(),
-      phone: phone.trim() || null,
-      guest_phone: phone.trim() || null,
     }).select().single();
 
     if (insertError) { setError(insertError.message); setLoading(false); return; }
