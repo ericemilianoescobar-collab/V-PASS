@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, AlertCircle, Loader2, Plus, UserPlus, Ticket as TicketIcon, Calendar, Lock, Image as ImageIcon, Trash2 } from 'lucide-react';
+import { X, AlertCircle, Loader2, Plus, UserPlus, Ticket as TicketIcon, Calendar, Lock, Image as ImageIcon, Upload } from 'lucide-react';
 import { supabase, type Agency, type Event } from '@/lib/supabase';
 import { generateTicketCode } from '@/lib/constants';
 import { downloadTicketPDF, downloadTicketImage } from '@/lib/ticketArt';
@@ -28,11 +28,45 @@ export function CreateEventModal({ agencyId, onClose, onCreated }: { agencyId: s
   const [amPm, setAmPm] = useState<'AM' | 'PM'>('PM');
   const [location, setLocation] = useState('');
   const [bgImageUrl, setBgImageUrl] = useState('');
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [qrPosX, setQrPosX] = useState(50);
   const [qrPosY, setQrPosY] = useState(50);
   const [qrSize, setQrSize] = useState(30);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Función para subir archivo de imagen local a Supabase Storage
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingImage(true);
+    setError('');
+
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Math.random().toString(36.substring(2))}-${Date.now()}.${fileExt}`;
+      const filePath = `event-bg/${fileName}`;
+
+      const { error: uploadErr } = await supabase.storage.from('event-assets').upload(filePath, file);
+      if (uploadErr) {
+        // Si no existe el bucket event-assets, intentamos base64 o informamos
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setBgImageUrl(reader.result as string);
+          setUploadingImage(false);
+        };
+        reader.readAsDataURL(file);
+        return;
+      }
+
+      const { data: publicURLData } = supabase.storage.from('event-assets').getPublicUrl(filePath);
+      setBgImageUrl(publicURLData.publicUrl);
+    } catch (err: any) {
+      setError('Error al subir la imagen: ' + err.message);
+    } finally {
+      setUploadingImage(false);
+    }
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,28 +123,64 @@ export function CreateEventModal({ agencyId, onClose, onCreated }: { agencyId: s
           <label className="block text-sm font-medium text-slate-300 mb-1">Ubicación (opcional)</label>
           <input value={location} onChange={e => setLocation(e.target.value)} className="input-field" placeholder="Lugar del evento" />
         </div>
+
+        {/* Subida de Imagen Local y Previsualización */}
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-1">Imagen de fondo (URL o enlace de imagen)</label>
-          <div className="flex items-center gap-2">
-            <ImageIcon size={18} className="text-slate-500 shrink-0" />
-            <input value={bgImageUrl} onChange={e => setBgImageUrl(e.target.value)} className="input-field" placeholder="https://..." />
+          <label className="block text-sm font-medium text-slate-300 mb-1">Imagen de fondo del ticket</label>
+          <div className="flex items-center gap-3">
+            <label className="btn-secondary text-xs flex items-center gap-2 cursor-pointer py-2 px-3">
+              {uploadingImage ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+              <span>{uploadingImage ? 'Subiendo...' : 'Subir desde archivo'}</span>
+              <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+            </label>
+            <span className="text-xs text-slate-500">o ingresa enlace URL abajo</span>
           </div>
-          <p className="text-xs text-slate-500 mt-1">Se mostrará como fondo en las entradas digitales de los invitados</p>
+          <input 
+            value={bgImageUrl} 
+            onChange={e => setBgImageUrl(e.target.value)} 
+            className="input-field mt-2 text-xs" 
+            placeholder="https://... o imagen cargada" 
+          />
         </div>
+
+        {/* Previsualización en Tiempo Real */}
+        <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+          <p className="text-xs font-semibold text-slate-400">Previsualización en vivo:</p>
+          <div 
+            className="relative h-40 rounded-lg bg-slate-950 overflow-hidden flex items-center justify-center border border-slate-800 bg-cover bg-center"
+            style={bgImageUrl ? { backgroundImage: `url(${bgImageUrl})` } : {}}
+          >
+            <div className="absolute inset-0 bg-black/40" />
+            <div 
+              className="absolute bg-white rounded-lg p-1.5 shadow-lg"
+              style={{
+                left: `${qrPosX}%`,
+                top: `${qrPosY}%`,
+                transform: 'translate(-50%, -50%)',
+                width: `${qrSize * 1.5}px`,
+                height: `${qrSize * 1.5}px`,
+              }}
+            >
+              <div className="w-full h-full bg-slate-900 rounded flex items-center justify-center text-[8px] text-white">QR</div>
+            </div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-3 gap-3">
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">QR Posición X: {qrPosX}%</label>
+            <label className="block text-xs font-medium text-slate-300 mb-1">QR Pos X: {qrPosX}%</label>
             <input type="range" min={10} max={90} value={qrPosX} onChange={e => setQrPosX(parseInt(e.target.value))} className="w-full accent-cyan-400" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">QR Posición Y: {qrPosY}%</label>
+            <label className="block text-xs font-medium text-slate-300 mb-1">QR Pos Y: {qrPosY}%</label>
             <input type="range" min={10} max={90} value={qrPosY} onChange={e => setQrPosY(parseInt(e.target.value))} className="w-full accent-cyan-400" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">QR Tamaño: {qrSize}%</label>
+            <label className="block text-xs font-medium text-slate-300 mb-1">QR Tamaño: {qrSize}%</label>
             <input type="range" min={10} max={60} value={qrSize} onChange={e => setQrSize(parseInt(e.target.value))} className="w-full accent-cyan-400" />
           </div>
         </div>
+
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 text-xs">
           <Lock size={14} /> Al guardar, el evento se bloquea y no podrá editarse ni crearse otro.
         </div>
@@ -184,16 +254,19 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
     setError('');
 
     const code = generateTicketCode(event.id);
+    const cleanPhoneVal = phone.trim() || null;
     
-    // Guardamos el invitado incluyendo el teléfono (y si no existe la columna phone, reintenta sin ella)
+    // Guardamos explícitamente tanto en phone como en whatsapp para evitar pérdida de datos
     const { error: insertError } = await supabase.from('tickets').insert({
       event_id: event.id,
       code,
       attendee_name: name.trim(),
-      phone: phone.trim() || null,
+      phone: cleanPhoneVal,
+      whatsapp: cleanPhoneVal,
     }).select().single();
 
     if (insertError) {
+      // Reintento si alguna columna específica no existiera en la DB
       const { error: retryError } = await supabase.from('tickets').insert({
         event_id: event.id,
         code,
@@ -219,7 +292,6 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
 
   const handleWhatsApp = () => {
     if (!lastTicket) return;
-    // Enlace exclusivo público al ticket individual del invitado usando el formato con barra diagonal
     const ticketUrl = `${window.location.origin}/#ticket/${lastTicket.code}`;
     const eventLocation = event.location || 'Por confirmar';
     const eventDateStr = `${event.event_date || ''} ${event.event_time ? `- ${event.event_time}${event.am_pm || ''}` : ''}`;

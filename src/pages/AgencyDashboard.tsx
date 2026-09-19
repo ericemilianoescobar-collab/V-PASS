@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   LogOut, Calendar, MapPin, Users, QrCode, Ticket as TicketIcon,
   BarChart3, Loader2, AlertCircle, CheckCircle2, Clock, Plus,
-  UserPlus, ChevronRight, Lock, MessageCircle, X, Download, FileText, Image as ImageIcon, Trash2
+  UserPlus, ChevronRight, Lock, MessageCircle, X, Download, FileText, Image as ImageIcon, Trash2, Upload
 } from 'lucide-react';
 import VPassLogo from '@/components/VPassLogo';
 import { supabase, type Agency, type Event, type Validator, type Ticket } from '@/lib/supabase';
@@ -292,34 +292,78 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                   <div className="flex items-center gap-2 text-sm"><MapPin size={16} className="text-green-400" /><div><p className="text-slate-500 text-xs">Ubicación</p><p className="text-white">{activeEvent.location || 'Sin especificar'}</p></div></div>
                 </div>
 
-                {/* Editor interactivo de diseño de entrada */}
-                <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-3">
+                {/* Editor interactivo de diseño de entrada con previsualización */}
+                <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-4">
                   <h4 className="text-sm font-semibold text-white">Configuración Visual de la Entrada</h4>
                   <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">URL de la imagen de fondo</label>
-                    <input 
-                      type="text" 
-                      defaultValue={activeEvent.bg_image_url || ''} 
-                      placeholder="https://..." 
-                      className="input-field text-xs"
-                      onBlur={async (e) => {
-                        const newUrl = e.target.value;
-                        await supabase.from('events').update({ bg_image_url: newUrl }).eq('id', activeEvent.id);
-                        setActiveEvent({ ...activeEvent, bg_image_url: newUrl });
-                      }}
-                    />
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Cargar o enlazar imagen de fondo</label>
+                    <div className="flex items-center gap-3">
+                      <label className="btn-secondary text-xs flex items-center gap-2 cursor-pointer py-2 px-3">
+                        <Upload size={14} />
+                        <span>Subir archivo</span>
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          className="hidden"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const reader = new FileReader();
+                            reader.onloadend = async () => {
+                              const resUrl = reader.result as string;
+                              await supabase.from('events').update({ bg_image_url: resUrl }).eq('id', activeEvent.id);
+                              setActiveEvent({ ...activeEvent, bg_image_url: resUrl });
+                            };
+                            reader.readAsDataURL(file);
+                          }} 
+                        />
+                      </label>
+                      <input 
+                        type="text" 
+                        value={activeEvent.bg_image_url || ''} 
+                        placeholder="https://..." 
+                        className="input-field text-xs flex-1"
+                        onChange={(e) => setActiveEvent({ ...activeEvent, bg_image_url: e.target.value })}
+                        onBlur={async (e) => {
+                          await supabase.from('events').update({ bg_image_url: e.target.value }).eq('id', activeEvent.id);
+                        }}
+                      />
+                    </div>
                   </div>
+
+                  {/* Previsualización en Vivo */}
+                  <div className="space-y-1">
+                    <p className="text-xs text-slate-400">Previsualización del diseño:</p>
+                    <div 
+                      className="relative h-44 rounded-xl bg-slate-950 overflow-hidden flex items-center justify-center border border-slate-800 bg-cover bg-center shadow-inner"
+                      style={activeEvent.bg_image_url ? { backgroundImage: `url(${activeEvent.bg_image_url})` } : {}}
+                    >
+                      <div className="absolute inset-0 bg-black/40" />
+                      <div 
+                        className="absolute bg-white rounded-lg p-2 shadow-2xl transition-all duration-150"
+                        style={{
+                          left: `${activeEvent.qr_pos_x || 50}%`,
+                          top: `${activeEvent.qr_pos_y || 50}%`,
+                          transform: 'translate(-50%, -50%)',
+                          width: `${(activeEvent.qr_size || 30) * 1.6}px`,
+                          height: `${(activeEvent.qr_size || 30) * 1.6}px`,
+                        }}
+                      >
+                        <div className="w-full h-full bg-slate-900 rounded flex items-center justify-center text-[9px] font-bold text-white">QR</div>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-3 gap-3 pt-2">
                     <div>
                       <label className="block text-xs text-slate-400 mb-1">Pos X: {activeEvent.qr_pos_x || 50}%</label>
                       <input 
                         type="range" min={10} max={90} 
-                        defaultValue={activeEvent.qr_pos_x || 50} 
-                        onChange={async (e) => {
-                          const val = parseInt(e.target.value);
-                          await supabase.from('events').update({ qr_pos_x: val }).eq('id', activeEvent.id);
-                          setActiveEvent({ ...activeEvent, qr_pos_x: val });
-                        }} 
+                        value={activeEvent.qr_pos_x || 50} 
+                        onChange={(e) => setActiveEvent({ ...activeEvent, qr_pos_x: parseInt(e.target.value) })}
+                        onMouseUp={async () => {
+                          await supabase.from('events').update({ qr_pos_x: activeEvent.qr_pos_x }).eq('id', activeEvent.id);
+                        }}
                         className="w-full accent-cyan-400" 
                       />
                     </div>
@@ -327,12 +371,11 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                       <label className="block text-xs text-slate-400 mb-1">Pos Y: {activeEvent.qr_pos_y || 50}%</label>
                       <input 
                         type="range" min={10} max={90} 
-                        defaultValue={activeEvent.qr_pos_y || 50} 
-                        onChange={async (e) => {
-                          const val = parseInt(e.target.value);
-                          await supabase.from('events').update({ qr_pos_y: val }).eq('id', activeEvent.id);
-                          setActiveEvent({ ...activeEvent, qr_pos_y: val });
-                        }} 
+                        value={activeEvent.qr_pos_y || 50} 
+                        onChange={(e) => setActiveEvent({ ...activeEvent, qr_pos_y: parseInt(e.target.value) })}
+                        onMouseUp={async () => {
+                          await supabase.from('events').update({ qr_pos_y: activeEvent.qr_pos_y }).eq('id', activeEvent.id);
+                        }}
                         className="w-full accent-cyan-400" 
                       />
                     </div>
@@ -340,21 +383,16 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                       <label className="block text-xs text-slate-400 mb-1">Tamaño QR: {activeEvent.qr_size || 30}%</label>
                       <input 
                         type="range" min={10} max={60} 
-                        defaultValue={activeEvent.qr_size || 30} 
-                        onChange={async (e) => {
-                          const val = parseInt(e.target.value);
-                          await supabase.from('events').update({ qr_size: val }).eq('id', activeEvent.id);
-                          setActiveEvent({ ...activeEvent, qr_size: val });
-                        }} 
+                        value={activeEvent.qr_size || 30} 
+                        onChange={(e) => setActiveEvent({ ...activeEvent, qr_size: parseInt(e.target.value) })}
+                        onMouseUp={async () => {
+                          await supabase.from('events').update({ qr_size: activeEvent.qr_size }).eq('id', activeEvent.id);
+                        }}
                         className="w-full accent-cyan-400" 
                       />
                     </div>
                   </div>
                 </div>
-
-                {activeEvent.bg_image_url && (
-                  <div className="rounded-xl overflow-hidden h-28 bg-cover bg-center border border-slate-800" style={{ backgroundImage: `url(${activeEvent.bg_image_url})` }} />
-                )}
 
                 <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800">
                   <div className="flex flex-wrap gap-2">
@@ -363,7 +401,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                     <button onClick={() => setShowReport(true)} className="btn-secondary text-sm flex items-center gap-2"><BarChart3 size={16} /> Reporte</button>
                   </div>
 
-                  {/* Botón Eliminar Evento con Advertencia Exacta */}
+                  {/* Botón Eliminar Evento con la advertencia exacta solicitada */}
                   <button 
                     onClick={async () => {
                       if (confirm('Importante, si eliminas este evento no tendrás forma de recuperarlo y no es reembolsable.')) {
@@ -426,7 +464,6 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
             ) : (
               <div className="space-y-2 max-h-[60vh] overflow-y-auto">
                 {tickets.map(t => {
-                  // Enlace exclusivo público al ticket individual del invitado (usando la ruta segura /#ticket/CODIGO)
                   const ticketUrl = `${window.location.origin}/#ticket/${t.code}`;
                   const guestPhone = t.phone || (t as any).whatsapp || '';
                   
@@ -463,7 +500,6 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                         </span>
 
                         <div className="flex items-center gap-1.5">
-                          {/* 1. Botón Ver / QR */}
                           <button
                             onClick={() => setSelectedTicketForModal(t)}
                             className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 transition-colors"
@@ -472,7 +508,6 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                             <QrCode size={16} />
                           </button>
 
-                          {/* 2. Botón Descargar Imagen / QR */}
                           <button
                             onClick={() => downloadQRCodeImage(t.code, t.attendee_name)}
                             className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-blue-400 transition-colors"
@@ -481,7 +516,6 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                             <ImageIcon size={16} />
                           </button>
 
-                          {/* 3. Botón Descargar PDF */}
                           <button
                             onClick={() => generateTicketPDF(t)}
                             className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-purple-400 transition-colors"
@@ -490,7 +524,6 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                             <FileText size={16} />
                           </button>
 
-                          {/* 4. Botón WhatsApp */}
                           <a
                             href={waLink}
                             target="_blank"
@@ -501,7 +534,6 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                             <MessageCircle size={16} />
                           </a>
 
-                          {/* 5. Botón Eliminar Invitado */}
                           <button
                             onClick={() => handleDeleteTicket(t.id)}
                             className="p-2 rounded-lg bg-slate-800 hover:bg-red-950/40 text-red-400 transition-colors"
