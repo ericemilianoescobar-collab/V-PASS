@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, AlertCircle, Loader2, Plus, UserPlus, Ticket as TicketIcon, Calendar, Lock, Image as ImageIcon } from 'lucide-react';
+import { X, AlertCircle, Loader2, Plus, UserPlus, Ticket as TicketIcon, Calendar, Lock, Image as ImageIcon, Trash2 } from 'lucide-react';
 import { supabase, type Agency, type Event } from '@/lib/supabase';
 import { generateTicketCode } from '@/lib/constants';
 import { downloadTicketPDF, downloadTicketImage } from '@/lib/ticketArt';
@@ -185,9 +185,7 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
 
     const code = generateTicketCode(event.id);
     
-    // Guardamos el invitado en Supabase (usamos phone en description/metadata o evitamos error si la columna no existe guardando solo lo esencial)
-    // Para asegurar que el teléfono quede guardado y visible en la lista, lo guardamos en la columna description o metadata si fuera necesario, 
-    // pero aquí lo pasamos directo al estado.
+    // Guardamos el invitado incluyendo el teléfono (y si no existe la columna phone, reintenta sin ella)
     const { error: insertError } = await supabase.from('tickets').insert({
       event_id: event.id,
       code,
@@ -196,7 +194,6 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
     }).select().single();
 
     if (insertError) {
-      // Si la columna phone no existe en la base de datos de tickets, reintentamos sin ella para no bloquear el guardado del invitado
       const { error: retryError } = await supabase.from('tickets').insert({
         event_id: event.id,
         code,
@@ -222,7 +219,8 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
 
   const handleWhatsApp = () => {
     if (!lastTicket) return;
-    const ticketUrl = `${window.location.origin}/#ticket=${lastTicket.code}`;
+    // Enlace exclusivo público al ticket individual del invitado usando el formato con barra diagonal
+    const ticketUrl = `${window.location.origin}/#ticket/${lastTicket.code}`;
     const eventLocation = event.location || 'Por confirmar';
     const eventDateStr = `${event.event_date || ''} ${event.event_time ? `- ${event.event_time}${event.am_pm || ''}` : ''}`;
 

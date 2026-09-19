@@ -26,7 +26,7 @@ export default function App() {
   useEffect(() => {
     const hash = window.location.hash.slice(1);
     if (hash.startsWith('ticket/')) {
-      setTicketToken(hash.slice(6));
+      setTicketToken(hash.slice(7));
       setRoute('ticket');
     } else if (hash === 'login') setRoute('login');
     else if (hash === 'validator') setRoute('validator');
@@ -91,7 +91,7 @@ export default function App() {
     );
   }
 
-  // Ticket view is public — no auth required
+  // Ticket view is public — opens the unique attendee ticket view without dashboard access
   if (route === 'ticket' && ticketToken) {
     return <TicketView accessToken={ticketToken} navigate={navigate} />;
   }

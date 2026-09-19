@@ -277,26 +277,107 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
         {tab === 'event' && (
           <div className="space-y-4 animate-fade-in">
             {activeEvent ? (
-              <div className="card p-6 animate-fade-in">
-                <div className="flex items-start justify-between mb-4">
+              <div className="card p-6 animate-fade-in space-y-4">
+                <div className="flex items-start justify-between">
                   <div>
                     <h3 className="text-xl font-bold text-white">{activeEvent.name}</h3>
                     {activeEvent.description && <p className="text-sm text-slate-400 mt-1">{activeEvent.description}</p>}
                   </div>
                   <span className="badge bg-green-500/10 text-green-300"><Lock size={12} /> Bloqueado</span>
                 </div>
-                <div className="grid sm:grid-cols-3 gap-4 mb-4">
+                
+                <div className="grid sm:grid-cols-3 gap-4">
                   <div className="flex items-center gap-2 text-sm"><Calendar size={16} className="text-cyan-400" /><div><p className="text-slate-500 text-xs">Fecha</p><p className="text-white">{activeEvent.event_date}</p></div></div>
                   <div className="flex items-center gap-2 text-sm"><Clock size={16} className="text-blue-400" /><div><p className="text-slate-500 text-xs">Hora</p><p className="text-white">{activeEvent.event_time} {activeEvent.am_pm}</p></div></div>
                   <div className="flex items-center gap-2 text-sm"><MapPin size={16} className="text-green-400" /><div><p className="text-slate-500 text-xs">Ubicación</p><p className="text-white">{activeEvent.location || 'Sin especificar'}</p></div></div>
                 </div>
+
+                {/* Editor interactivo de diseño de entrada */}
+                <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-3">
+                  <h4 className="text-sm font-semibold text-white">Configuración Visual de la Entrada</h4>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">URL de la imagen de fondo</label>
+                    <input 
+                      type="text" 
+                      defaultValue={activeEvent.bg_image_url || ''} 
+                      placeholder="https://..." 
+                      className="input-field text-xs"
+                      onBlur={async (e) => {
+                        const newUrl = e.target.value;
+                        await supabase.from('events').update({ bg_image_url: newUrl }).eq('id', activeEvent.id);
+                        setActiveEvent({ ...activeEvent, bg_image_url: newUrl });
+                      }}
+                    />
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 pt-2">
+                    <div>
+                      <label className="block text-xs text-slate-400 mb-1">Pos X: {activeEvent.qr_pos_x || 50}%</label>
+                      <input 
+                        type="range" min={10} max={90} 
+                        defaultValue={activeEvent.qr_pos_x || 50} 
+                        onChange={async (e) => {
+                          const val = parseInt(e.target.value);
+                          await supabase.from('events').update({ qr_pos_x: val }).eq('id', activeEvent.id);
+                          setActiveEvent({ ...activeEvent, qr_pos_x: val });
+                        }} 
+                        className="w-full accent-cyan-400" 
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-400 mb-1">Pos Y: {activeEvent.qr_pos_y || 50}%</label>
+                      <input 
+                        type="range" min={10} max={90} 
+                        defaultValue={activeEvent.qr_pos_y || 50} 
+                        onChange={async (e) => {
+                          const val = parseInt(e.target.value);
+                          await supabase.from('events').update({ qr_pos_y: val }).eq('id', activeEvent.id);
+                          setActiveEvent({ ...activeEvent, qr_pos_y: val });
+                        }} 
+                        className="w-full accent-cyan-400" 
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-400 mb-1">Tamaño QR: {activeEvent.qr_size || 30}%</label>
+                      <input 
+                        type="range" min={10} max={60} 
+                        defaultValue={activeEvent.qr_size || 30} 
+                        onChange={async (e) => {
+                          const val = parseInt(e.target.value);
+                          await supabase.from('events').update({ qr_size: val }).eq('id', activeEvent.id);
+                          setActiveEvent({ ...activeEvent, qr_size: val });
+                        }} 
+                        className="w-full accent-cyan-400" 
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 {activeEvent.bg_image_url && (
-                  <div className="mb-4 rounded-xl overflow-hidden h-32 bg-cover bg-center" style={{ backgroundImage: `url(${activeEvent.bg_image_url})` }} />
+                  <div className="rounded-xl overflow-hidden h-28 bg-cover bg-center border border-slate-800" style={{ backgroundImage: `url(${activeEvent.bg_image_url})` }} />
                 )}
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={() => setShowAddGuest(true)} className="btn-primary text-sm flex items-center gap-2"><Plus size={16} /> Agregar invitado</button>
-                  <button onClick={() => setTab('validators')} className="btn-secondary text-sm flex items-center gap-2"><Users size={16} /> Validadores</button>
-                  <button onClick={() => setShowReport(true)} className="btn-secondary text-sm flex items-center gap-2"><BarChart3 size={16} /> Reporte</button>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800">
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => setShowAddGuest(true)} className="btn-primary text-sm flex items-center gap-2"><Plus size={16} /> Agregar invitado</button>
+                    <button onClick={() => setTab('validators')} className="btn-secondary text-sm flex items-center gap-2"><Users size={16} /> Validadores</button>
+                    <button onClick={() => setShowReport(true)} className="btn-secondary text-sm flex items-center gap-2"><BarChart3 size={16} /> Reporte</button>
+                  </div>
+
+                  {/* Botón Eliminar Evento con Advertencia Exacta */}
+                  <button 
+                    onClick={async () => {
+                      if (confirm('Importante, si eliminas este evento no tendrás forma de recuperarlo y no es reembolsable.')) {
+                        await supabase.from('events').delete().eq('id', activeEvent.id);
+                        setActiveEvent(null);
+                        setTickets([]);
+                        setValidators([]);
+                        window.location.reload();
+                      }
+                    }} 
+                    className="px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm font-medium border border-red-500/20 flex items-center gap-1.5 transition-all"
+                  >
+                    <Trash2 size={16} /> Eliminar evento
+                  </button>
                 </div>
               </div>
             ) : canCreateEvent ? (
@@ -345,8 +426,8 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
             ) : (
               <div className="space-y-2 max-h-[60vh] overflow-y-auto">
                 {tickets.map(t => {
-                  // Enlace exclusivo público al ticket individual del invitado (sin acceso al panel)
-                  const ticketUrl = `${window.location.origin}/#ticket=${t.code}`;
+                  // Enlace exclusivo público al ticket individual del invitado (usando la ruta segura /#ticket/CODIGO)
+                  const ticketUrl = `${window.location.origin}/#ticket/${t.code}`;
                   const guestPhone = t.phone || (t as any).whatsapp || '';
                   
                   const eventLocation = activeEvent?.location || 'Por confirmar';
