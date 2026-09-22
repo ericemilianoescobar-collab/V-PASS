@@ -26,23 +26,19 @@ export default function AgencyLogin({ setAgency, navigate }: Props) {
         password: password.trim(),
       });
 
-      if (authError) {
+      if (authError || !authData.user) {
         throw new Error('Credenciales incorrectas o usuario no registrado.');
       }
 
-      if (!authData.user) {
-        throw new Error('No se pudo autenticar al usuario.');
-      }
-
-      // 2. Obtener datos de la agencia en la tabla 'agencies'
+      // 2. Consulta a la tabla agencies usando el id del usuario autenticado (según esquema relacional)
       const { data: agencyData, error: agencyError } = await supabase
         .from('agencies')
         .select('*')
-        .eq('email', authData.user.email)
+        .eq('id', authData.user.id)
         .single();
 
       if (agencyError || !agencyData) {
-        throw new Error('No se encontró el perfil de la organización.');
+        throw new Error('No se encontró el perfil de la organización vinculado a este usuario.');
       }
 
       setAgency(agencyData as Agency);
