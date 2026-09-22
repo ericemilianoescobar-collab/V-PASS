@@ -234,7 +234,7 @@ export function CreateValidatorModal({ eventId, onClose, onCreated }: { eventId:
   );
 }
 
-// ============ 3. ADD GUEST ============
+// ============ 3. ADD GUEST (CORREGIDO CON guest_phone) ============
 
 export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClose: () => void; onAdded: () => void }) {
   const [name, setName] = useState('');
@@ -253,13 +253,12 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
     const code = generateTicketCode(event.id);
     const cleanPhoneVal = phone.trim() || '';
     
-    // Guardamos explícitamente en phone y whatsapp
+    // CORRECCIÓN: Inserción apuntando directamente a la columna 'guest_phone' que existe en Supabase
     const { error: insertError } = await supabase.from('tickets').insert({
       event_id: event.id,
       code,
       attendee_name: name.trim(),
-      phone: cleanPhoneVal,
-      whatsapp: cleanPhoneVal,
+      guest_phone: cleanPhoneVal,
     });
 
     if (insertError) {
@@ -281,10 +280,9 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
 
   const handleWhatsApp = () => {
     if (!lastTicket) return;
-    // Enlace estrictamente aislado al ticket individual del invitado usando hash #ticket/
     const ticketUrl = `${window.location.origin}/#ticket/${lastTicket.code}`;
     const eventLocation = event.location || 'Por confirmar';
-    const eventDateStr = `${event.event_date || ''} ${event.event_time ? `- ${event.event_time} ${event.am_pm || ''}` : ''}`;
+    const eventDateStr = `${event.event_date || ''} ${event.event_time ? `- ${event.event_time}${event.am_pm || ''}` : ''}`;
 
     const textMsg = `Hola *${lastTicket.attendeeName}*, aquí tienes tu pase para *${event.name}*.\n\n` +
       `🎟️ *Código de entrada:* ${lastTicket.code}\n` +
