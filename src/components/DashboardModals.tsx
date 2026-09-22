@@ -1,551 +1,475 @@
-import { useEffect, useState, useCallback } from 'react';
-import {
-  LogOut, Calendar, MapPin, Users, QrCode, Ticket as TicketIcon,
-  BarChart3, Loader2, AlertCircle, CheckCircle2, Clock, Plus,
-  UserPlus, ChevronRight, Lock, MessageCircle, X, Download, FileText, Image as ImageIcon, Trash2, Upload, History
-} from 'lucide-react';
-import VPassLogo from '@/components/VPassLogo';
-import { supabase, type Agency, type Event, type Validator, type Ticket } from '@/lib/supabase';
-import { PLAN_FEATURES, whatsappLink } from '@/lib/constants';
-import { CreateEventModal, CreateValidatorModal, AddGuestModal, ReportModal } from '@/components/DashboardModals';
+import { useState, useEffect } from 'react';
+import { X, AlertCircle, Loader2, Plus, UserPlus, Ticket as TicketIcon, Calendar, Lock, Image as ImageIcon, Upload } from 'lucide-react';
+import { supabase, type Agency, type Event } from '@/lib/supabase';
+import { generateTicketCode } from '@/lib/constants';
+import { downloadTicketPDF, downloadTicketImage } from '@/lib/ticketArt';
 
-interface Props {
-  agency: Agency;
-  setAgency: (a: Agency | null) => void;
-  navigate: (route: string) => void;
-}
-
-type Tab = 'overview' | 'event' | 'history' | 'guests' | 'validators' | 'reports';
-
-export default function AgencyDashboard({ agency, setAgency, navigate }: Props) {
-  const [tab, setTab] = useState<Tab>('overview');
-  const [events, setEvents] = useState<Event[]>([]);
-  const [activeEvent, setActiveEvent] = useState<Event | null>(null);
-  const [historyEvents, setHistoryEvents] = useState<Event[]>([]);
-  const [validators, setValidators] = useState<Validator[]>([]);
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showCreateEvent, setShowCreateEvent] = useState(false);
-  const [showCreateValidator, setShowCreateValidator] = useState(false);
-  const [showAddGuest, setShowAddGuest] = useState(false);
-  const [showReport, setShowReport] = useState(false);
-  const [selectedTicketForModal, setSelectedTicketForModal] = useState<Ticket | null>(null);
-  const [error, setError] = useState('');
-
-  const planInfo = PLAN_FEATURES[agency.plan];
-
-  const isEventExpired = (ev: Event) => {
-    if (!ev.event_date) return false;
-    const eventDateTimeStr = ev.event_time 
-      ? `${ev.event_date}T${ev.event_time}:00` 
-      : `${ev.event_date}T23:59:59`;
-    const eventTime = new Date(eventDateTimeStr).getTime();
-    if (isNaN(eventTime)) return false;
-    const expirationTime = eventTime + (24 * 60 * 60 * 1000);
-    return Date.now() > expirationTime;
-  };
-
-  const fetchEvents = useCallback(async () => {
-    const { data } = await supabase.from('events').select('*').eq('agency_id', agency.id).order('created_at', { ascending: false });
-    const eventsData = (data as Event[]) || [];
-    setEvents(eventsData);
-
-    const activeList = eventsData.filter(e => !isEventExpired(e));
-    const expiredList = eventsData.filter(e => isEventExpired(e));
-
-    setHistoryEvents(expiredList);
-
-    const currentActive = activeList.length > 0 ? activeList[0] : null;
-    if (currentActive) {
-      setActiveEvent(currentActive);
-      fetchValidators(currentActive.id);
-      fetchTickets(currentActive.id);
-    } else {
-      setActiveEvent(null);
-      setTickets([]);
-      setValidators([]);
-    }
-    setLoading(false);
-  }, [agency.id]);
-
-  useEffect(() => { fetchEvents(); }, [fetchEvents]);
-
-  const fetchValidators = async (eventId: string) => {
-    const { data } = await supabase.from('validators').select('id, event_id, email, name, active, created_at').eq('event_id', eventId).order('created_at', { ascending: false });
-    setValidators((data as Validator[]) || []);
-  };
-
-  const fetchTickets = async (eventId: string) => {
-    const { data } = await supabase.from('tickets').select('*').eq('event_id', eventId).order('created_at', { ascending: false });
-    setTickets((data as Ticket[]) || []);
-  };
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setAgency(null);
-    navigate('home');
-  };
-
-  const handleEventCreated = (ev: Event) => {
-    setEvents(prev => [ev, ...prev]);
-    setActiveEvent(ev);
-    setShowCreateEvent(false);
-    fetchValidators(ev.id);
-    fetchTickets(ev.id);
-    setTab('event');
-  };
-
-  const handleDeleteTicket = async (ticketId: string) => {
-    if (!confirm('¿Estás seguro de eliminar este invitado?')) return;
-    const { error: err } = await supabase.from('tickets').delete().eq('id', ticketId);
-    if (err) {
-      alert('Error al eliminar invitado');
-    } else {
-      setTickets(prev => prev.filter(t => t.id !== ticketId));
-    }
-  };
-
-  const downloadQRCodeImage = async (ticketCode: string, attendeeName: string) => {
-    try {
-      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${ticketCode}`;
-      const response = await fetch(qrUrl);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `QR-${attendeeName || 'invitado'}-${ticketCode}.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error("Error al descargar imagen QR:", err);
-      alert("No se pudo descargar la imagen del QR.");
-    }
-  };
-
-  const generateTicketPDF = (t: Ticket) => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert("Por favor, permite las ventanas emergentes para generar el PDF.");
-      return;
-    }
-
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${t.code}`;
-    const eventName = activeEvent?.name || 'Evento V-PASS';
-    const eventDate = activeEvent?.event_date || '';
-    const eventLocation = activeEvent?.location || '';
-    const bgImage = activeEvent?.bg_image_url || '';
-
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Entrada - ${t.attendee_name}</title>
-          <style>
-            body { font-family: Arial, sans-serif; background: #0f172a; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-            .ticket { position: relative; background: ${bgImage ? `url(${bgImage}) center/cover no-repeat` : '#1e293b'}; border: 2px solid #38bdf8; border-radius: 16px; padding: 24px; text-align: center; width: 320px; box-shadow: 0 10px 25px rgba(0,0,0,0.8); overflow: hidden; }
-            .overlay { position: absolute; inset: 0; background: rgba(15, 23, 42, 0.75); z-index: 1; }
-            .content { position: relative; z-index: 2; }
-            h2 { color: #38bdf8; margin-bottom: 5px; text-shadow: 0 2px 4px rgba(0,0,0,0.8); }
-            p { margin: 8px 0; color: #cbd5e1; font-size: 14px; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
-            .name { font-size: 20px; font-weight: bold; color: #fff; margin: 12px 0; text-shadow: 0 2px 4px rgba(0,0,0,0.8); }
-            .code { font-family: monospace; background: #0f172a; padding: 6px 12px; border-radius: 8px; color: #38bdf8; display: inline-block; margin-top: 8px; border: 1px solid rgba(56, 189, 248, 0.3); }
-            .qr-box { background: #fff; padding: 10px; border-radius: 12px; display: inline-block; margin: 12px 0; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
-            img { width: 150px; height: 150px; display: block; }
-          </style>
-        </head>
-        <body>
-          <div class="ticket">
-            ${bgImage ? '<div class="overlay"></div>' : ''}
-            <div class="content">
-              <h2>V-PASS TICKET</h2>
-              <p>${eventName}</p>
-              <div class="qr-box">
-                <img src="${qrUrl}" />
-              </div>
-              <div class="name">${t.attendee_name || 'Invitado'}</div>
-              <p>📅 ${eventDate} | 📍 ${eventLocation}</p>
-              <div class="code">Código: ${t.code}</div>
-            </div>
-          </div>
-          <script>
-            window.onload = function() { window.print(); }
-          </script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-  };
-
-  const canCreateEvent = agency.plan_active && !activeEvent;
-
+function ModalShell({ title, children, onClose, wide }: { title: string; children: React.ReactNode; onClose: () => void; wide?: boolean }) {
   return (
-    <div className="min-h-screen bg-slate-950 relative overflow-hidden">
-      <div className="absolute inset-0 bg-grid pointer-events-none" />
-      <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-500/5 rounded-full blur-[120px] pointer-events-none" />
-
-      {/* Header */}
-      <header className="relative z-20 flex items-center justify-between px-4 sm:px-6 py-3 border-b border-slate-800 bg-slate-950/80 backdrop-blur-xl sticky top-0">
-        <button onClick={() => navigate('home')} className="flex items-center gap-2">
-          <VPassLogo size="sm" />
-        </button>
-        <div className="hidden sm:flex items-center gap-3">
-          <span className="text-sm text-slate-300">Bienvenido, <span className="font-semibold text-white">{agency.agency_name}</span></span>
-          <span className={`badge ${agency.plan_active ? 'bg-cyan-400/10 text-cyan-300 border border-cyan-400/20' : 'bg-slate-800 text-slate-500 border border-slate-700'}`}>
-            {planInfo.name} ({agency.plan.toUpperCase()}) {agency.plan_active ? '✓ Activo' : 'Inactivo'}
-          </span>
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4 animate-fade-in" onClick={onClose}>
+      <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm" />
+      <div className={`relative card p-6 w-full ${wide ? 'max-w-2xl' : 'max-w-md'} max-h-[90vh] overflow-y-auto animate-scale-in`} onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4 sticky top-0 bg-slate-900/95 backdrop-blur-sm pb-3 -mx-6 px-6 -mt-6 pt-6 z-10 rounded-t-2xl">
+          <h3 className="text-lg font-bold text-white">{title}</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20} /></button>
         </div>
-        <button onClick={handleLogout} className="btn-ghost flex items-center gap-2 text-red-400 hover:text-red-300 text-sm">
-          <LogOut size={16} /> <span className="hidden sm:inline">Cerrar sesión</span>
-        </button>
-      </header>
-
-      {/* Mobile welcome */}
-      <div className="sm:hidden flex items-center justify-between px-4 py-2 border-b border-slate-800">
-        <span className="text-sm text-slate-300">Bienvenido, <span className="font-semibold text-white">{agency.agency_name}</span></span>
-        <span className={`badge ${agency.plan_active ? 'bg-cyan-400/10 text-cyan-300' : 'bg-slate-800 text-slate-500'} text-xs`}>
-          {planInfo.name}
-        </span>
+        {children}
       </div>
-
-      <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 py-6">
-        {error && (
-          <div className="mb-4 flex items-center gap-2 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm animate-fade-in">
-            <AlertCircle size={18} /> {error} <button onClick={() => setError('')} className="ml-auto"><X size={16} /></button>
-          </div>
-        )}
-
-        {/* Tabs */}
-        <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
-          {[
-            { id: 'overview' as Tab, label: 'Resumen', icon: BarChart3 },
-            { id: 'event' as Tab, label: 'Mi evento activo', icon: Calendar },
-            { id: 'history' as Tab, label: 'Historial / Resumen', icon: History },
-            { id: 'guests' as Tab, label: 'Invitados', icon: Users },
-            { id: 'validators' as Tab, label: 'Validadores', icon: QrCode },
-            { id: 'reports' as Tab, label: 'Reportes', icon: TicketIcon },
-          ].map(({ id, label, icon: Icon }) => (
-            <button key={id} onClick={() => setTab(id)} className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 whitespace-nowrap ${tab === id ? 'bg-cyan-400/10 text-cyan-300 border border-cyan-400/30' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent'}`}>
-              <Icon size={16} /> {label}
-            </button>
-          ))}
-        </div>
-
-        {/* OVERVIEW */}
-        {tab === 'overview' && (
-          <div className="space-y-6 animate-fade-in">
-            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <StatCard icon={Calendar} label="Eventos" value={events.length} color="cyan" />
-              <StatCard icon={TicketIcon} label="Invitados" value={`${tickets.length} / ${agency.max_tickets || '∞'}`} color="blue" />
-              <StatCard icon={CheckCircle2} label="Ingresaron" value={tickets.filter(t => t.status === 'used').length} color="green" />
-              <StatCard icon={Users} label="Validadores" value={`${validators.length} / ${agency.max_validators}`} color="yellow" />
-            </div>
-
-            <div className="card p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="text-lg font-bold text-white">Tu plan actual: {planInfo.name}</h3>
-                  <p className="text-sm text-slate-400">Límite: {agency.max_tickets ? `${agency.max_tickets} entradas` : 'Entradas ilimitadas'} y {agency.max_validators} validadores.</p>
-                </div>
-                <span className={`badge ${agency.plan_active ? 'bg-green-500/10 text-green-300 border border-green-500/20' : 'bg-red-500/10 text-red-300 border border-red-500/20'}`}>
-                  {agency.plan_active ? 'Activo' : 'Inactivo'}
-                </span>
-              </div>
-            </div>
-
-            {canCreateEvent ? (
-              <div className="card p-8 flex flex-col items-center justify-center text-center">
-                <Calendar size={48} className="text-slate-600 mb-3" />
-                <h3 className="text-lg font-bold text-white mb-2">Crea un nuevo evento</h3>
-                <p className="text-sm text-slate-400 mb-4">Configura fecha, hora, ubicación y diseño del QR</p>
-                <button onClick={() => setShowCreateEvent(true)} className="btn-primary flex items-center gap-2">
-                  <Plus size={18} /> Crear evento
-                </button>
-              </div>
-            ) : activeEvent ? (
-              <div className="card p-5">
-                <h3 className="text-lg font-bold text-white mb-3">Evento en curso</h3>
-                <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900/50 border border-slate-800">
-                  <div>
-                    <p className="font-semibold text-white">{activeEvent.name}</p>
-                    <div className="flex items-center gap-3 text-xs text-slate-400 mt-1">
-                      <span className="flex items-center gap-1"><Calendar size={12} /> {activeEvent.event_date}</span>
-                      {activeEvent.event_time && <span>{activeEvent.event_time} {activeEvent.am_pm}</span>}
-                    </div>
-                  </div>
-                  <button onClick={() => setTab('event')} className="btn-secondary text-xs flex items-center gap-1.5">
-                    Ver detalle <ChevronRight size={14} />
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="card p-8 flex flex-col items-center justify-center text-center">
-                <Calendar size={48} className="text-slate-600 mb-3" />
-                <h3 className="text-lg font-bold text-white mb-2">No hay eventos activos</h3>
-                <p className="text-sm text-slate-400 mb-4">Tu evento anterior ha finalizado o expirado (24h posteriores).</p>
-                <button onClick={() => setShowCreateEvent(true)} className="btn-primary flex items-center gap-2">
-                  <Plus size={18} /> Crear nuevo evento
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* EVENT TAB */}
-        {tab === 'event' && (
-          <div className="space-y-4 animate-fade-in">
-            {activeEvent ? (
-              <div className="card p-6 animate-fade-in space-y-4">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h3 className="text-xl font-bold text-white">{activeEvent.name}</h3>
-                    {activeEvent.description && <p className="text-sm text-slate-400 mt-1">{activeEvent.description}</p>}
-                  </div>
-                  <span className="badge bg-green-500/10 text-green-300"><Lock size={12} /> Activo (Auto-cierre en 24h)</span>
-                </div>
-                
-                <div className="grid sm:grid-cols-3 gap-4">
-                  <div className="flex items-center gap-2 text-sm"><Calendar size={16} className="text-cyan-400" /><div><p className="text-slate-500 text-xs">Fecha</p><p className="text-white">{activeEvent.event_date}</p></div></div>
-                  <div className="flex items-center gap-2 text-sm"><Clock size={16} className="text-blue-400" /><div><p className="text-slate-500 text-xs">Hora</p><p className="text-white">{activeEvent.event_time} {activeEvent.am_pm}</p></div></div>
-                  <div className="flex items-center gap-2 text-sm"><MapPin size={16} className="text-green-400" /><div><p className="text-slate-500 text-xs">Ubicación</p><p className="text-white">{activeEvent.location || 'Sin especificar'}</p></div></div>
-                </div>
-
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800">
-                  <div className="flex flex-wrap gap-2">
-                    <button onClick={() => setShowAddGuest(true)} className="btn-primary text-sm flex items-center gap-2"><Plus size={16} /> Agregar invitado</button>
-                    <button onClick={() => setTab('validators')} className="btn-secondary text-sm flex items-center gap-2"><Users size={16} /> Validadores</button>
-                    <button onClick={() => setShowReport(true)} className="btn-secondary text-sm flex items-center gap-2"><BarChart3 size={16} /> Reporte</button>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="card p-12 flex flex-col items-center justify-center text-center space-y-4">
-                <Calendar size={48} className="text-slate-600 mb-3" />
-                <p className="text-slate-400">No tienes ningún evento activo actualmente.</p>
-                <button onClick={() => setShowCreateEvent(true)} className="btn-primary flex items-center gap-2">
-                  <Plus size={18} /> Crear nuevo evento
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* HISTORY TAB */}
-        {tab === 'history' && (
-          <div className="space-y-4 animate-fade-in">
-            <h3 className="text-lg font-bold text-white mb-2">Historial de Eventos Finalizados</h3>
-            {historyEvents.length === 0 ? (
-              <div className="card p-12 text-center text-slate-400">
-                <History size={48} className="mx-auto mb-3 text-slate-600" />
-                No hay eventos finalizados en el historial.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {historyEvents.map(ev => (
-                  <div key={ev.id} className="card p-4 flex items-center justify-between bg-slate-900/40">
-                    <div>
-                      <p className="font-semibold text-white">{ev.name}</p>
-                      <p className="text-xs text-slate-400 mt-1">📅 {ev.event_date} {ev.event_time ? `- ${ev.event_time} ${ev.am_pm || ''}` : ''}</p>
-                    </div>
-                    <span className="badge bg-slate-800 text-slate-400 border border-slate-700">Finalizado</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* GUESTS TAB */}
-        {tab === 'guests' && (
-          <div className="space-y-4 animate-fade-in">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-bold text-white">Invitados ({tickets.length} / {agency.max_tickets || 'Ilimitadas'})</h3>
-                <p className="text-xs text-slate-400">Límite de tu plan actual ({planInfo.name})</p>
-              </div>
-              {activeEvent && (
-                <button 
-                  onClick={() => {
-                    if (agency.max_tickets && tickets.length >= agency.max_tickets) {
-                      alert(`Has alcanzado el límite de ${agency.max_tickets} entradas de tu plan.`);
-                      return;
-                    }
-                    setShowAddGuest(true);
-                  }} 
-                  className="btn-primary text-sm flex items-center gap-2"
-                >
-                  <Plus size={16} /> Agregar invitado
-                </button>
-              )}
-            </div>
-
-            {!activeEvent ? (
-              <div className="card p-12 text-center"><Users size={48} className="text-slate-600 mx-auto mb-3" /><p className="text-slate-400">Crea un evento activo primero</p></div>
-            ) : tickets.length === 0 ? (
-              <div className="card p-12 text-center"><Users size={48} className="text-slate-600 mx-auto mb-3" /><p className="text-slate-400 mb-4">Sin invitados todavía</p><button onClick={() => setShowAddGuest(true)} className="btn-primary text-sm flex items-center gap-2 mx-auto"><Plus size={16} /> Agregar primer invitado</button></div>
-            ) : (
-              <div className="space-y-2 max-h-[60vh] overflow-y-auto">
-                {tickets.map(t => {
-                  const ticketUrl = `${window.location.origin}/#ticket/${t.code}`;
-                  const guestPhone = (t as any).guest_phone || '';
-                  const eventLocation = activeEvent?.location || 'Por confirmar';
-                  const eventDateStr = `${activeEvent?.event_date || ''} ${activeEvent?.event_time ? `- ${activeEvent.event_time}${activeEvent.am_pm || ''}` : ''}`;
-
-                  const textMsg = `Hola *${t.attendee_name || 'invitado'}*, aquí tienes tu pase para *${activeEvent?.name || 'el evento'}*.\n\n` +
-                    `🎟️ *Código de entrada:* ${t.code}\n` +
-                    `📅 *Fecha:* ${eventDateStr}\n` +
-                    `📍 *Lugar:* ${eventLocation}\n\n` +
-                    `🔗 *Ver tu entrada:* ${ticketUrl}\n\n` +
-                    `Presenta este pase en el ingreso.\n\n` +
-                    `⚠️ *Importante:* No compartas este enlace ni tu entrada con nadie.`;
-
-                  const waMessage = encodeURIComponent(textMsg);
-                  const cleanPhone = guestPhone ? guestPhone.replace(/\D/g, '') : '';
-                  const waLink = cleanPhone ? `https://wa.me/${cleanPhone}?text=${waMessage}` : `https://wa.me/?text=${waMessage}`;
-
-                  return (
-                    <div key={t.id} className="card p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-lg bg-cyan-400/10 border border-cyan-400/20 flex items-center justify-center shrink-0">
-                          <Users size={16} className="text-cyan-400" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-semibold text-white">{t.attendee_name || 'Sin nombre'}</p>
-                          <p className="text-xs text-slate-500 font-mono">{t.code} {guestPhone ? `• Tel: ${guestPhone}` : '• Sin teléfono'}</p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
-                        <span className={`badge ${t.status === 'valid' ? 'bg-green-500/10 text-green-300' : t.status === 'used' ? 'bg-blue-500/10 text-blue-300' : 'bg-red-500/10 text-red-300'}`}>
-                          {t.status === 'valid' ? 'Válida' : t.status === 'used' ? 'Ingresó' : 'Cancelada'}
-                        </span>
-
-                        <div className="flex items-center gap-1.5">
-                          <button onClick={() => setSelectedTicketForModal(t)} className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 transition-colors" title="Ver Ticket y QR"><QrCode size={16} /></button>
-                          <button onClick={() => downloadQRCodeImage(t.code, t.attendee_name)} className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-blue-400 transition-colors" title="Descargar imagen QR"><ImageIcon size={16} /></button>
-                          <button onClick={() => generateTicketPDF(t)} className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-purple-400 transition-colors" title="Descargar PDF"><FileText size={16} /></button>
-                          <a href={waLink} target="_blank" rel="noopener noreferrer" className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-green-400 transition-colors" title="Enviar por WhatsApp"><MessageCircle size={16} /></a>
-                          <button onClick={() => handleDeleteTicket(t.id)} className="p-2 rounded-lg bg-slate-800 hover:bg-red-950/40 text-red-400 transition-colors" title="Eliminar invitado"><Trash2 size={16} /></button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* VALIDATORS TAB */}
-        {tab === 'validators' && (
-          <div className="space-y-4 animate-fade-in">
-            <div className="flex items-center justify-between">
-              <div><h3 className="text-lg font-bold text-white">Validadores asignados</h3><p className="text-sm text-slate-400">Credenciales para tu personal de puerta</p></div>
-            </div>
-            {!activeEvent ? (
-              <div className="card p-12 text-center"><Users size={48} className="text-slate-600 mx-auto mb-3" /><p className="text-slate-400">Crea un evento activo primero</p></div>
-            ) : validators.length === 0 ? (
-              <div className="card p-12 text-center"><Users size={48} className="text-slate-600 mx-auto mb-3" /><p className="text-slate-400 mb-4">No hay validadores asignados a este evento.</p></div>
-            ) : (
-              <div className="space-y-2">
-                {validators.map(v => (
-                  <div key={v.id} className="card p-4 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-cyan-400/10 border border-cyan-400/20 flex items-center justify-center"><Users size={18} className="text-cyan-400" /></div>
-                      <div><p className="font-semibold text-white">{v.name}</p><p className="text-sm text-slate-400">Usuario: {v.email}</p></div>
-                    </div>
-                    <span className="badge bg-green-500/10 text-green-300">Activo</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* REPORTS TAB */}
-        {tab === 'reports' && (
-          <div className="space-y-4 animate-fade-in">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-white">Reportes</h3>
-              {activeEvent && <button onClick={() => setShowReport(true)} className="btn-primary text-sm flex items-center gap-2"><BarChart3 size={16} /> Ver reporte detallado</button>}
-            </div>
-            {!activeEvent ? (
-              <div className="card p-12 text-center"><BarChart3 size={48} className="text-slate-600 mx-auto mb-3" /><p className="text-slate-400">Crea un evento activo primero</p></div>
-            ) : (
-              <div className="grid sm:grid-cols-3 gap-4">
-                <StatCard icon={TicketIcon} label="Total" value={tickets.length} color="cyan" />
-                <StatCard icon={CheckCircle2} label="Ingresaron" value={tickets.filter(t => t.status === 'used').length} color="green" />
-                <StatCard icon={Clock} label="Sin usar" value={tickets.filter(t => t.status === 'valid').length} color="yellow" />
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {selectedTicketForModal && activeEvent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-          <div 
-            className="card max-w-sm w-full p-6 relative bg-slate-900 border border-slate-800 text-center space-y-4 bg-cover bg-center overflow-hidden shadow-2xl"
-            style={activeEvent.bg_image_url ? { backgroundImage: `url(${activeEvent.bg_image_url})` } : {}}
-          >
-            {activeEvent.bg_image_url && <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" />}
-            <div className="relative z-10">
-              <button onClick={() => setSelectedTicketForModal(null)} className="absolute top-1 right-1 text-slate-400 hover:text-white bg-slate-900/80 p-1.5 rounded-full">
-                <X size={18} />
-              </button>
-              <h3 className="text-lg font-bold text-white mb-1">Entrada Digital</h3>
-              <p className="text-xs text-cyan-400 font-semibold mb-3">{activeEvent.name}</p>
-              <div className="p-3 bg-white rounded-xl inline-block mx-auto shadow-lg">
-                <img 
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${selectedTicketForModal.code}`} 
-                  alt="QR Code" 
-                  className="w-36 h-36 mx-auto"
-                />
-              </div>
-              <div className="mt-3">
-                <p className="text-base font-bold text-white">{selectedTicketForModal.attendee_name}</p>
-                <p className="text-xs text-slate-300 mt-1">📅 {activeEvent.event_date} {activeEvent.event_time ? `• ${activeEvent.event_time} ${activeEvent.am_pm || ''}` : ''}</p>
-                <p className="text-xs text-slate-400 font-mono mt-2 bg-slate-950/60 py-1 px-2 rounded border border-slate-800 inline-block">Código: {selectedTicketForModal.code}</p>
-              </div>
-              <div className="flex gap-2 pt-3">
-                <button 
-                  onClick={() => downloadQRCodeImage(selectedTicketForModal.code, selectedTicketForModal.attendee_name)}
-                  className="btn-secondary flex-1 text-xs flex items-center justify-center gap-1.5"
-                >
-                  <ImageIcon size={14} /> Imagen
-                </button>
-                <button 
-                  onClick={() => generateTicketPDF(selectedTicketForModal)}
-                  className="btn-primary flex-1 text-xs flex items-center justify-center gap-1.5"
-                >
-                  <FileText size={14} /> PDF
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showCreateEvent && <CreateEventModal agencyId={agency.id} onClose={() => setShowCreateEvent(false)} onCreated={handleEventCreated} />}
-      {showCreateValidator && activeEvent && <CreateValidatorModal eventId={activeEvent.id} onClose={() => setShowCreateValidator(false)} onCreated={() => { setShowCreateValidator(false); fetchValidators(activeEvent.id); }} />}
-      {showAddGuest && activeEvent && <AddGuestModal event={activeEvent} onClose={() => setShowAddGuest(false)} onAdded={() => fetchTickets(activeEvent.id)} />}
-      {showReport && activeEvent && <ReportModal event={activeEvent} agency={agency} onClose={() => setShowReport(false)} />}
     </div>
   );
 }
 
-function StatCard({ icon: Icon, label, value, color }: { icon: any; label: string; value: string | number; color: string }) {
+// ============ 1. CREATE EVENT ============
+
+export function CreateEventModal({ agencyId, onClose, onCreated }: { agencyId: string; onClose: () => void; onCreated: (ev: Event) => void }) {
+  const [name, setName] = useState('');
+  const [date, setDate] = useState('');
+  const [time, setTime] = useState('');
+  const [amPm, setAmPm] = useState<'AM' | 'PM'>('PM');
+  const [location, setLocation] = useState('');
+  const [bgImageUrl, setBgImageUrl] = useState('');
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [qrPosX, setQrPosX] = useState(50);
+  const [qrPosY, setQrPosY] = useState(50);
+  const [qrSize, setQrSize] = useState(30);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingImage(true);
+    setError('');
+
+    try {
+      const fileExt = file.name.split('.').pop();
+      const randomStr = Math.random().toString(36).substring(2);
+      const fileName = `${randomStr}-${Date.now()}.${fileExt}`;
+      const filePath = `event-bg/${fileName}`;
+
+      const { error: uploadErr } = await supabase.storage.from('event-assets').upload(filePath, file);
+      if (uploadErr) {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setBgImageUrl(reader.result as string);
+          setUploadingImage(false);
+        };
+        reader.readAsDataURL(file);
+        return;
+      }
+
+      const { data: publicURLData } = supabase.storage.from('event-assets').getPublicUrl(filePath);
+      setBgImageUrl(publicURLData.publicUrl);
+    } catch (err: any) {
+      setError('Error al subir la imagen: ' + err.message);
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+
+    const { data, error: insertError } = await supabase.from('events').insert({
+      agency_id: agencyId,
+      name,
+      event_date: date,
+      event_time: time || null,
+      am_pm: amPm,
+      location: location || null,
+      bg_image_url: bgImageUrl || null,
+      qr_pos_x: qrPosX,
+      qr_pos_y: qrPosY,
+      qr_size: qrSize,
+      locked: true,
+    }).select().single();
+
+    if (insertError) {
+      setError(insertError.message);
+      setLoading(false);
+      return;
+    }
+    onCreated(data as Event);
+  };
+
+  return (
+    <ModalShell title="Crear evento" onClose={onClose} wide>
+      {error && <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm"><AlertCircle size={16} /> {error}</div>}
+      <form onSubmit={submit} className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-1">Nombre del evento</label>
+          <input value={name} onChange={e => setName(e.target.value)} required className="input-field" placeholder="Concierto, fiesta, conferencia..." />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-1">Fecha</label>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} required className="input-field" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-1">Hora</label>
+            <div className="flex gap-2">
+              <input type="time" value={time} onChange={e => setTime(e.target.value)} className="input-field flex-1" />
+              <div className="flex flex-col gap-1">
+                <button type="button" onClick={() => setAmPm('AM')} className={`px-3 py-1 rounded-lg text-xs font-semibold ${amPm === 'AM' ? 'bg-cyan-400 text-slate-950' : 'bg-slate-800 text-slate-400'}`}>AM</button>
+                <button type="button" onClick={() => setAmPm('PM')} className={`px-3 py-1 rounded-lg text-xs font-semibold ${amPm === 'PM' ? 'bg-cyan-400 text-slate-950' : 'bg-slate-800 text-slate-400'}`}>PM</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-1">Ubicación (opcional)</label>
+          <input value={location} onChange={e => setLocation(e.target.value)} className="input-field" placeholder="Lugar del evento" />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-1">Imagen de fondo del ticket</label>
+          <div className="flex items-center gap-3">
+            <label className="btn-secondary text-xs flex items-center gap-2 cursor-pointer py-2 px-3">
+              {uploadingImage ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+              <span>{uploadingImage ? 'Subiendo...' : 'Subir desde archivo'}</span>
+              <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+            </label>
+            <span className="text-xs text-slate-500">o ingresa enlace URL abajo</span>
+          </div>
+          <input 
+            value={bgImageUrl} 
+            onChange={e => setBgImageUrl(e.target.value)} 
+            className="input-field mt-2 text-xs" 
+            placeholder="https://... o imagen cargada" 
+          />
+        </div>
+
+        <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+          <p className="text-xs font-semibold text-slate-400">Previsualización en vivo:</p>
+          <div 
+            className="relative h-40 rounded-lg bg-slate-950 overflow-hidden flex items-center justify-center border border-slate-800 bg-cover bg-center"
+            style={bgImageUrl ? { backgroundImage: `url(${bgImageUrl})` } : {}}
+          >
+            <div className="absolute inset-0 bg-black/40" />
+            <div 
+              className="absolute bg-white rounded-lg p-1.5 shadow-lg"
+              style={{
+                left: `${qrPosX}%`,
+                top: `${qrPosY}%`,
+                transform: 'translate(-50%, -50%)',
+                width: `${qrSize * 1.5}px`,
+                height: `${qrSize * 1.5}px`,
+              }}
+            >
+              <div className="w-full h-full bg-slate-900 rounded flex items-center justify-center text-[8px] text-white">QR</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-300 mb-1">QR Pos X: {qrPosX}%</label>
+            <input type="range" min={10} max={90} value={qrPosX} onChange={e => setQrPosX(parseInt(e.target.value))} className="w-full accent-cyan-400" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-300 mb-1">QR Pos Y: {qrPosY}%</label>
+            <input type="range" min={10} max={90} value={qrPosY} onChange={e => setQrPosY(parseInt(e.target.value))} className="w-full accent-cyan-400" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-300 mb-1">QR Tamaño: {qrSize}%</label>
+            <input type="range" min={10} max={60} value={qrSize} onChange={e => setQrSize(parseInt(e.target.value))} className="w-full accent-cyan-400" />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 text-xs">
+          <Lock size={14} /> Al guardar, el evento se bloquea y no podrá editarse ni crearse otro.
+        </div>
+        <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2">
+          {loading ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />} Guardar evento
+        </button>
+      </form>
+    </ModalShell>
+  );
+}
+
+// ============ 2. CREATE VALIDATOR ============
+
+export function CreateValidatorModal({ eventId, onClose, onCreated }: { eventId: string; onClose: () => void; onCreated: () => void }) {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    const { error: rpcError } = await supabase.rpc('create_validator', {
+      p_event_id: eventId, p_email: email.trim(), p_password: password, p_name: name,
+    });
+    if (rpcError) { setError(rpcError.message); setLoading(false); return; }
+    onCreated();
+  };
+
+  return (
+    <ModalShell title="Crear validador" onClose={onClose}>
+      {error && <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm"><AlertCircle size={16} /> {error}</div>}
+      <form onSubmit={submit} className="space-y-3">
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-1">Nombre del validador</label>
+          <input value={name} onChange={e => setName(e.target.value)} required className="input-field" placeholder="Puerta 1" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-1">Usuario (correo)</label>
+          <input type="email" value={email} onChange={e => setEmail(e.target.value)} required className="input-field" placeholder="validador@evento.com" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-1">Contraseña</label>
+          <input type="text" value={password} onChange={e => setPassword(e.target.value)} required className="input-field" placeholder="Contraseña para este evento" />
+        </div>
+        <p className="text-xs text-slate-500">Solo para este evento. El validador ingresa desde el botón "Validador" en la página principal.</p>
+        <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2">
+          {loading ? <Loader2 size={18} className="animate-spin" /> : <UserPlus size={18} />} Crear validador
+        </button>
+      </form>
+    </ModalShell>
+  );
+}
+
+// ============ 3. ADD GUEST (CORREGIDO CON guest_phone) ============
+
+export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClose: () => void; onAdded: () => void }) {
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [lastTicket, setLastTicket] = useState<{ code: string; attendeeName: string; guestPhone: string } | null>(null);
+  const [actionLoading, setActionLoading] = useState<string>('');
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setLoading(true);
+    setError('');
+
+    const code = generateTicketCode(event.id);
+    const cleanPhoneVal = phone.trim() || '';
+    
+    // CORRECCIÓN: Inserción apuntando directamente a la columna 'guest_phone' que existe en Supabase
+    const { error: insertError } = await supabase.from('tickets').insert({
+      event_id: event.id,
+      code,
+      attendee_name: name.trim(),
+      guest_phone: cleanPhoneVal,
+    });
+
+    if (insertError) {
+      setError(insertError.message);
+      setLoading(false);
+      return;
+    }
+
+    setLastTicket({
+      code,
+      attendeeName: name.trim(),
+      guestPhone: cleanPhoneVal,
+    });
+    setName('');
+    setPhone('');
+    setLoading(false);
+    onAdded();
+  };
+
+  const handleWhatsApp = () => {
+    if (!lastTicket) return;
+    const ticketUrl = `${window.location.origin}/#ticket/${lastTicket.code}`;
+    const eventLocation = event.location || 'Por confirmar';
+    const eventDateStr = `${event.event_date || ''} ${event.event_time ? `- ${event.event_time}${event.am_pm || ''}` : ''}`;
+
+    const textMsg = `Hola *${lastTicket.attendeeName}*, aquí tienes tu pase para *${event.name}*.\n\n` +
+      `🎟️ *Código de entrada:* ${lastTicket.code}\n` +
+      `📅 *Fecha:* ${eventDateStr}\n` +
+      `📍 *Lugar:* ${eventLocation}\n\n` +
+      `🔗 *Ver tu entrada:* ${ticketUrl}\n\n` +
+      `Presenta este pase en el ingreso.\n\n` +
+      `⚠️ *Importante:* No compartas este enlace ni tu entrada con nadie.`;
+
+    const msg = encodeURIComponent(textMsg);
+    const cleanPhone = lastTicket.guestPhone ? lastTicket.guestPhone.replace(/\D/g, '') : '';
+    const link = cleanPhone ? `https://wa.me/${cleanPhone}?text=${msg}` : `https://wa.me/?text=${msg}`;
+    window.open(link, '_blank');
+  };
+
+  const handlePDF = async () => {
+    if (!lastTicket) return;
+    setActionLoading('pdf');
+    await downloadTicketPDF({
+      code: lastTicket.code,
+      attendeeName: lastTicket.attendeeName,
+      eventName: event.name,
+      eventDate: event.event_date,
+      eventTime: event.event_time,
+      amPm: event.am_pm,
+      location: event.location,
+    });
+    setActionLoading('');
+  };
+
+  const handleImage = async () => {
+    if (!lastTicket) return;
+    setActionLoading('img');
+    await downloadTicketImage({
+      code: lastTicket.code,
+      attendeeName: lastTicket.attendeeName,
+      eventName: event.name,
+      eventDate: event.event_date,
+      eventTime: event.event_time,
+      amPm: event.am_pm,
+      location: event.location,
+      bgImageUrl: event.bg_image_url,
+      qrPosX: event.qr_pos_x,
+      qrPosY: event.qr_pos_y,
+      qrSize: event.qr_size,
+    });
+    setActionLoading('');
+  };
+
+  return (
+    <ModalShell title="Agregar invitado" onClose={onClose}>
+      {error && <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm"><AlertCircle size={16} /> {error}</div>}
+      <form onSubmit={submit} className="space-y-3">
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-1">Nombre del invitado</label>
+          <input value={name} onChange={e => setName(e.target.value)} required className="input-field" placeholder="Juan Pérez" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-1">Número de teléfono (WhatsApp)</label>
+          <input value={phone} onChange={e => setPhone(e.target.value)} className="input-field" placeholder="921543755" />
+        </div>
+        <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2">
+          {loading ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />} Guardar invitado
+        </button>
+      </form>
+
+      {lastTicket && (
+        <div className="mt-4 p-4 rounded-xl bg-slate-900/60 border border-slate-800 animate-fade-in">
+          <div className="flex items-center gap-2 mb-3">
+            <TicketIcon size={18} className="text-cyan-400" />
+            <p className="font-semibold text-white">{lastTicket.attendeeName}</p>
+          </div>
+          <p className="text-xs text-slate-500 font-mono mb-3">Código: {lastTicket.code} {lastTicket.guestPhone ? `• Tel: ${lastTicket.guestPhone}` : ''}</p>
+          <div className="flex gap-2">
+            <button onClick={handleWhatsApp} className="flex-1 px-3 py-2.5 rounded-xl font-semibold text-sm bg-green-500/10 text-green-300 border border-green-500/20 hover:bg-green-500/20 transition-all flex items-center justify-center gap-1.5">
+              WhatsApp
+            </button>
+            <button onClick={handlePDF} disabled={!!actionLoading} className="flex-1 px-3 py-2.5 rounded-xl font-semibold text-sm bg-red-500/10 text-red-300 border border-red-500/20 hover:bg-red-500/20 transition-all disabled:opacity-40 flex items-center justify-center gap-1.5">
+              {actionLoading === 'pdf' ? <Loader2 size={14} className="animate-spin" /> : 'PDF'}
+            </button>
+            <button onClick={handleImage} disabled={!!actionLoading} className="flex-1 px-3 py-2.5 rounded-xl font-semibold text-sm bg-blue-500/10 text-blue-300 border border-blue-500/20 hover:bg-blue-500/20 transition-all disabled:opacity-40 flex items-center justify-center gap-1.5">
+              {actionLoading === 'img' ? <Loader2 size={14} className="animate-spin" /> : 'Imagen'}
+            </button>
+          </div>
+        </div>
+      )}
+    </ModalShell>
+  );
+}
+
+// ============ 4. REPORT MODAL ============
+
+export function ReportModal({ event, agency, onClose }: { event: Event; agency: Agency; onClose: () => void }) {
+  const [report, setReport] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.rpc('get_event_report', { p_event_id: event.id });
+      setReport(data?.[0] || null);
+      setLoading(false);
+    })();
+  }, [event.id]);
+
+  const handleDownloadPDF = async () => {
+    if (!report) return;
+    setDownloading(true);
+    const { jsPDF } = await import('jspdf');
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    pdf.setFillColor(10, 15, 26); pdf.rect(0, 0, 210, 297, 'F');
+    pdf.setTextColor(34, 211, 238); pdf.setFontSize(22); pdf.setFont('helvetica', 'bold');
+    pdf.text('V-PASS — Reporte de Evento', 105, 30, { align: 'center' });
+    pdf.setTextColor(255, 255, 255); pdf.setFontSize(16);
+    pdf.text(report.event_name || event.name, 105, 50, { align: 'center' });
+    pdf.setFontSize(12); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(148, 163, 184);
+    pdf.text(`Fecha: ${report.event_date || event.event_date}${report.event_time ? ` - ${report.event_time}${report.am_pm || ''}` : ''}`, 105, 62, { align: 'center' });
+    if (report.location) pdf.text(`Ubicacion: ${report.location}`, 105, 72, { align: 'center' });
+    pdf.setDrawColor(34, 211, 238); pdf.line(30, 85, 180, 85);
+    pdf.setTextColor(255, 255, 255); pdf.setFontSize(14); pdf.setFont('helvetica', 'bold');
+    let y = 105;
+    const rows: [string, string][] = [
+      ['Total de entradas generadas', String(report.total_tickets || 0)],
+      ['Personas que ingresaron (escaneadas)', String(report.used_tickets || 0)],
+      ['Entradas sin usar', String(report.valid_tickets || 0)],
+      ['Entradas canceladas', String(report.cancelled_tickets || 0)],
+      ['Total de validaciones', String(report.total_validations || 0)],
+    ];
+    for (const [label, val] of rows) {
+      pdf.text(label, 30, y); pdf.text(val, 180, y, { align: 'right' }); y += 12;
+    }
+    const pct = report.total_tickets > 0 ? Math.round((report.used_tickets / report.total_tickets) * 100) : 0;
+    pdf.text(`Porcentaje de asistencia`, 30, y); pdf.text(`${pct}%`, 180, y, { align: 'right' });
+    pdf.setTextColor(34, 211, 238); pdf.setFontSize(12); pdf.text('V-PASS', 105, 280, { align: 'center' });
+    pdf.save(`reporte-${event.name}.pdf`);
+    setDownloading(false);
+  };
+
+  return (
+    <ModalShell title="Reporte del evento" onClose={onClose} wide>
+      {loading ? (
+        <div className="flex justify-center py-8"><Loader2 size={24} className="animate-spin text-cyan-400" /></div>
+      ) : report ? (
+        <div className="space-y-4">
+          <div className="text-center mb-4">
+            <h4 className="text-xl font-bold text-white">{report.event_name || event.name}</h4>
+            <p className="text-sm text-slate-400">{report.event_date} {report.event_time} {report.am_pm || ''}</p>
+            {report.location && <p className="text-sm text-slate-400">{report.location}</p>}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <ReportStat label="Entradas generadas" value={report.total_tickets} color="cyan" />
+            <ReportStat label="Personas ingresaron" value={report.used_tickets} color="green" />
+            <ReportStat label="Sin usar" value={report.valid_tickets} color="yellow" />
+            <ReportStat label="Canceladas" value={report.cancelled_tickets} color="red" />
+          </div>
+          <div className="card p-4">
+            <div className="flex justify-between text-sm mb-2">
+              <span className="text-slate-300">Porcentaje de asistencia</span>
+              <span className="text-white font-bold">{report.total_tickets > 0 ? Math.round((report.used_tickets / report.total_tickets) * 100) : 0}%</span>
+            </div>
+            <div className="h-3 bg-slate-800 rounded-full overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-cyan-400 to-green-400 rounded-full transition-all duration-500" style={{ width: `${report.total_tickets > 0 ? (report.used_tickets / report.total_tickets) * 100 : 0}%` }} />
+            </div>
+          </div>
+          {agency.plan === 'premium' ? (
+            <button onClick={handleDownloadPDF} disabled={downloading} className="btn-primary w-full flex items-center justify-center gap-2">
+              {downloading ? <Loader2 size={18} className="animate-spin" /> : <TicketIcon size={18} />} Descargar reporte PDF
+            </button>
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-700 text-slate-400 text-sm">
+              <Lock size={14} /> Descarga de PDF disponible solo en Plan Premium (S/ 250)
+            </div>
+          )}
+        </div>
+      ) : <p className="text-slate-400 text-center py-6">No hay datos</p>}
+    </ModalShell>
+  );
+}
+
+function ReportStat({ label, value, color }: { label: string; value: number; color: string }) {
   const colors: Record<string, string> = {
-    cyan: 'text-cyan-400 bg-cyan-400/15 border-cyan-400/30',
-    blue: 'text-blue-400 bg-blue-400/15 border-blue-400/30',
-    green: 'text-green-400 bg-green-400/15 border-green-400/30',
-    yellow: 'text-yellow-400 bg-yellow-400/15 border-yellow-400/30',
+    cyan: 'text-cyan-400', green: 'text-green-400', yellow: 'text-yellow-400', red: 'text-red-400',
   };
   return (
-    <div className="card p-5">
-      <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 border ${colors[color]}`}><Icon size={20} /></div>
-      <p className="text-2xl font-black text-white">{value}</p>
-      <p className="text-sm text-slate-400">{label}</p>
+    <div className="card p-4 text-center">
+      <p className={`text-2xl font-black ${colors[color]}`}>{value}</p>
+      <p className="text-xs text-slate-400 mt-1">{label}</p>
     </div>
   );
 }
