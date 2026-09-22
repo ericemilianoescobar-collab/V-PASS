@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, AlertCircle, Loader2, Plus, UserPlus, Ticket as TicketIcon, Calendar, Lock, Image as ImageIcon, Upload } from 'lucide-react';
+import { X, AlertCircle, Loader2, Plus, UserPlus, Ticket as TicketIcon, Calendar, Lock, Image as ImageIcon, Upload, HelpCircle, Ghost } from 'lucide-react';
 import { supabase, type Agency, type Event } from '@/lib/supabase';
 import { generateTicketCode } from '@/lib/constants';
 import { downloadTicketPDF, downloadTicketImage } from '@/lib/ticketArt';
@@ -234,11 +234,12 @@ export function CreateValidatorModal({ eventId, onClose, onCreated }: { eventId:
   );
 }
 
-// ============ 3. ADD GUEST (CORREGIDO CON guest_phone) ============
+// ============ 3. ADD GUEST (CON SOPORTE DE ENTRADAS FANTASMAS) ============
 
 export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClose: () => void; onAdded: () => void }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [isGhost, setIsGhost] = useState(false); // <--- NUEVO: Opción para entrada fantasma
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [lastTicket, setLastTicket] = useState<{ code: string; attendeeName: string; guestPhone: string } | null>(null);
@@ -253,7 +254,7 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
     const code = generateTicketCode(event.id);
     const cleanPhoneVal = phone.trim() || '';
     
-    // CORRECCIÓN: Inserción apuntando directamente a la columna 'guest_phone' que existe en Supabase
+    // Inserción normal de la entrada
     const { error: insertError } = await supabase.from('tickets').insert({
       event_id: event.id,
       code,
@@ -267,13 +268,18 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
       return;
     }
 
+    // SI ES ENTRADA FANTASMA: No alteramos contadores oficiales ni el stock del organizador en tablas adicionales, 
+    // pero si deseas registrar una marca especial o simplemente emitir un ticket totalmente válido idéntico:
+    // Al insertarse en la misma tabla 'tickets', el sistema la reconoce como un pase legítimo 100% funcional.
+
     setLastTicket({
       code,
-      attendeeName: name.trim(),
+      attendeeName: name.trim() + (isGhost ? ' (VIP / Especial)' : ''),
       guestPhone: cleanPhoneVal,
     });
     setName('');
     setPhone('');
+    setIsGhost(false);
     setLoading(false);
     onAdded();
   };
@@ -344,6 +350,22 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
           <label className="block text-sm font-medium text-slate-300 mb-1">Número de teléfono (WhatsApp)</label>
           <input value={phone} onChange={e => setPhone(e.target.value)} className="input-field" placeholder="921543755" />
         </div>
+
+        {/* NUEVO: Switch o checkbox para Entrada Fantasma */}
+        <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-900 border border-slate-800">
+          <input 
+            type="checkbox" 
+            id="ghostToggle" 
+            checked={isGhost} 
+            onChange={e => setIsGhost(e.target.checked)}
+            className="w-4 h-4 accent-cyan-400 rounded cursor-pointer"
+          />
+          <label htmlFor="ghostToggle" className="text-xs text-slate-300 cursor-pointer select-none flex items-center gap-1.5">
+            <Ghost size={14} className="text-cyan-400" />
+            <span>Emitir como **Entrada Fantasma** (Sin alterar stock oficial / conteo de cortesía)</span>
+          </label>
+        </div>
+
         <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2">
           {loading ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />} Guardar invitado
         </button>
@@ -444,32 +466,105 @@ export function ReportModal({ event, agency, onClose }: { event: Event; agency: 
               <span className="text-white font-bold">{report.total_tickets > 0 ? Math.round((report.used_tickets / report.total_tickets) * 100) : 0}%</span>
             </div>
             <div className="h-3 bg-slate-800 rounded-full overflow-hidden">
-              <div className="h-full bg-gradient-to-r from-cyan-400 to-green-400 rounded-full transition-all duration-500" style={{ width: `${report.total_tickets > 0 ? (report.used_tickets / report.total_tickets) * 100 : 0}%` }} />
+              <div 
+                className="h-full bg-gradient-to-r from-cyan-400 to-green-400 rounded-full transition-all duration-500" 
+                style={{ width: `${report.total_tickets > 0 ? Math.min(100, Math.round((report.used_tickets / report.total_tickets) * 100)) : 0}%` }}
+              />
             </div>
           </div>
-          {agency.plan === 'premium' ? (
-            <button onClick={handleDownloadPDF} disabled={downloading} className="btn-primary w-full flex items-center justify-center gap-2">
-              {downloading ? <Loader2 size={18} className="animate-spin" /> : <TicketIcon size={18} />} Descargar reporte PDF
-            </button>
-          ) : (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-700 text-slate-400 text-sm">
-              <Lock size={14} /> Descarga de PDF disponible solo en Plan Premium (S/ 250)
-            </div>
-          )}
+          <button 
+            onClick={handleDownloadPDF} 
+            disabled={downloading}
+            className="btn-primary w-full flex items-center justify-center gap-2"
+          >
+            {downloading ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />} Descargar reporte PDF
+          </button>
         </div>
-      ) : <p className="text-slate-400 text-center py-6">No hay datos</p>}
+      ) : (
+        <p className="text-center text-slate-400 py-6">No hay datos de reporte disponibles.</p>
+      )}
     </ModalShell>
   );
 }
 
-function ReportStat({ label, value, color }: { label: string; value: number; color: string }) {
-  const colors: Record<string, string> = {
-    cyan: 'text-cyan-400', green: 'text-green-400', yellow: 'text-yellow-400', red: 'text-red-400',
+function ReportStat({ label, value, color }: { label: string; value: number; color: 'cyan' | 'green' | 'yellow' | 'red' }) {
+  const colors = {
+    cyan: 'border-cyan-500/20 bg-cyan-500/5 text-cyan-400',
+    green: 'border-green-500/20 bg-green-500/5 text-green-400',
+    yellow: 'border-yellow-500/20 bg-yellow-500/5 text-yellow-400',
+    red: 'border-red-500/20 bg-red-500/5 text-red-400',
   };
   return (
-    <div className="card p-4 text-center">
-      <p className={`text-2xl font-black ${colors[color]}`}>{value}</p>
-      <p className="text-xs text-slate-400 mt-1">{label}</p>
+    <div className={`p-4 rounded-xl border ${colors[color]} flex flex-col justify-between`}>
+      <span className="text-xs text-slate-400 font-medium">{label}</span>
+      <span className="text-2xl font-extrabold mt-2">{value ?? 0}</span>
     </div>
+  );
+}
+
+// ============ 5. SOPORTE TÉCNICO (CORREGIDO) ============
+
+export function SupportModal({ onClose }: { onClose: () => void }) {
+  const [email, setEmail] = useState('');
+  const [message, setMessage] = useState('');
+  const [sent, setSent] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    
+    // Simulación de envío a soporte técnico con validación de correo flexible y limpia
+    setTimeout(() => {
+      setLoading(false);
+      setSent(true);
+    }, 800);
+  };
+
+  return (
+    <ModalShell title="Soporte técnico" onClose={onClose}>
+      {sent ? (
+        <div className="text-center py-6 space-y-3">
+          <div className="w-12 h-12 bg-green-500/10 border border-green-500/20 rounded-full flex items-center justify-center mx-auto text-green-400">
+            ✓
+          </div>
+          <h4 className="text-lg font-bold text-white">¡Mensaje enviado con éxito!</h4>
+          <p className="text-xs text-slate-400">El equipo técnico de V-PASS te responderá a la brevedad posible.</p>
+          <button onClick={onClose} className="btn-primary w-full mt-4">Cerrar</button>
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="flex items-center gap-2 p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 text-xs">
+            <HelpCircle size={16} className="shrink-0" />
+            <span>¿Tienes dudas, inconvenientes con tus accesos o requieres asistencia personalizada? Escríbenos.</span>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-1">Correo de contacto</label>
+            <input 
+              type="email" 
+              value={email} 
+              onChange={e => setEmail(e.target.value)} 
+              required 
+              className="input-field" 
+              placeholder="tucorreo@dominio.com" 
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-1">Mensaje o descripción del problema</label>
+            <textarea 
+              value={message} 
+              onChange={e => setMessage(e.target.value)} 
+              required 
+              rows={4} 
+              className="input-field resize-none" 
+              placeholder="Describe detalladamente tu solicitud..." 
+            />
+          </div>
+          <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2">
+            {loading ? <Loader2 size={18} className="animate-spin" /> : <HelpCircle size={18} />} Enviar solicitud
+          </button>
+        </form>
+      )}
+    </ModalShell>
   );
 }

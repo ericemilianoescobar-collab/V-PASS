@@ -181,7 +181,6 @@ export default function TicketView({ code }: Props) {
           <VPassLogo size="sm" />
         </div>
 
-        {/* Tarjeta del Ticket con la imagen de fondo adaptativa real */}
         <div className="relative rounded-3xl overflow-hidden border border-cyan-500/40 shadow-2xl bg-slate-950 p-6 text-center">
           {event.bg_image_url && (
             <div className="absolute inset-0 z-0">
