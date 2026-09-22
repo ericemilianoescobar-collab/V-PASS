@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Ticket as TicketIcon, Calendar, MapPin, Download, FileText, Image as ImageIcon, AlertCircle, Loader2 } from 'lucide-react';
+import { Calendar, MapPin, FileText, Image as ImageIcon, AlertCircle, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import VPassLogo from '@/components/VPassLogo';
 
@@ -10,14 +10,12 @@ interface Props {
 export default function TicketView({ code }: Props) {
   const [ticket, setTicket] = useState<any>(null);
   const [event, setEvent] = useState<any>(null);
-  const [agency, setAgency] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
     const fetchTicketData = async () => {
       try {
-        // Buscamos el ticket por su código único
         const { data: ticketData, error: ticketErr } = await supabase
           .from('tickets')
           .select('*')
@@ -31,7 +29,6 @@ export default function TicketView({ code }: Props) {
 
         setTicket(ticketData);
 
-        // Buscamos el evento asociado
         const { data: eventData } = await supabase
           .from('events')
           .select('*')
@@ -40,17 +37,6 @@ export default function TicketView({ code }: Props) {
 
         if (eventData) {
           setEvent(eventData);
-
-          // Buscamos la agencia organizadora
-          const { data: agencyData } = await supabase
-            .from('agencies')
-            .select('*')
-            .eq('id', eventData.agency_id)
-            .single();
-
-          if (agencyData) {
-            setAgency(agencyData);
-          }
         }
       } catch (err) {
         console.error("Error al cargar ticket:", err);
@@ -66,6 +52,7 @@ export default function TicketView({ code }: Props) {
     if (!ticket || !event) return;
     setActionLoading(true);
     try {
+      // Generamos una captura limpia con el arte completo integrado
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${ticket.code}`;
       const res = await fetch(qrUrl);
       const blob = await res.blob();
@@ -103,7 +90,7 @@ export default function TicketView({ code }: Props) {
             body { font-family: Arial, sans-serif; background: #090d16; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
             .ticket-card {
               position: relative;
-              width: 340px;
+              width: 360px;
               border-radius: 20px;
               overflow: hidden;
               border: 2px solid #38bdf8;
@@ -185,7 +172,7 @@ export default function TicketView({ code }: Props) {
       <div className="absolute inset-0 bg-grid pointer-events-none" />
       {event.bg_image_url && (
         <div 
-          className="absolute inset-0 bg-cover bg-center opacity-15 blur-2xl pointer-events-none" 
+          className="absolute inset-0 bg-cover bg-center opacity-20 blur-xl pointer-events-none" 
           style={{ backgroundImage: `url(${event.bg_image_url})` }} 
         />
       )}
@@ -195,9 +182,9 @@ export default function TicketView({ code }: Props) {
           <VPassLogo size="sm" />
         </div>
 
-        {/* Tarjeta del Ticket con fondo adaptado */}
+        {/* Tarjeta del Ticket con la imagen de fondo adaptativa y QR superpuesto */}
         <div 
-          className="card relative overflow-hidden text-center p-6 border border-slate-700/80 shadow-2xl bg-cover bg-center"
+          className="card relative overflow-hidden text-center p-6 border border-cyan-500/30 shadow-2xl bg-cover bg-center"
           style={event.bg_image_url ? { backgroundImage: `url(${event.bg_image_url})` } : { backgroundColor: '#1e293b' }}
         >
           {event.bg_image_url && <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-md" />}
@@ -208,7 +195,7 @@ export default function TicketView({ code }: Props) {
               <h2 className="text-lg font-extrabold text-white mt-1">{event.name}</h2>
             </div>
 
-            <div className="p-3.5 bg-white rounded-2xl inline-block shadow-xl border border-white/20">
+            <div className="p-3.5 bg-white rounded-2xl inline-block shadow-2xl border border-white/20">
               <img 
                 src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${ticket.code}`} 
                 alt="QR Code" 
