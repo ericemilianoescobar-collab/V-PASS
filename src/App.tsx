@@ -13,58 +13,61 @@ export default function App() {
   const [ticketCode, setTicketCode] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Manejador de rutas basado en Hash (ej. #ticket/VP-12345 o #dashboard)
   useEffect(() => {
-    const handleHashChange = () => {
+    const handleNavigation = async () => {
       const hash = window.location.hash;
+      
       if (hash.startsWith('#ticket/')) {
         const code = hash.replace('#ticket/', '');
         setTicketCode(code);
         setRoute('ticket');
-      } else if (hash === '#login') {
-        setRoute('login');
-      } else if (hash === '#dashboard' && agency) {
-        setRoute('dashboard');
-      } else {
-        // Si no hay hash específico de ticket, revisamos sesión activa
-        checkAuth();
+        setLoading(false);
+        return;
       }
-    };
 
-    const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        const { data: agencyData } = await supabase
-          .from('agencies')
-          .select('*')
-          .eq('email', session.user.email)
-          .single();
-        if (agencyData) {
-          setAgency(agencyData as Agency);
+      if (hash === '#login') {
+        setRoute('login');
+        setLoading(false);
+        return;
+      }
+
+      // Verificamos sesión activa en Supabase
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const { data: agencyData } = await supabase
+            .from('agencies')
+            .select('*')
+            .eq('email', session.user.email)
+            .single();
+          if (agencyData) {
+            setAgency(agencyData as Agency);
+            setRoute('dashboard');
+          }
         }
+      } catch (err) {
+        console.error("Error al verificar sesión:", err);
       }
       setLoading(false);
     };
 
-    handleHashChange();
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [agency]);
+    handleNavigation();
+    window.addEventListener('hashchange', handleNavigation);
+    return () => window.removeEventListener('hashchange', handleNavigation);
+  }, []);
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-cyan-400">
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-cyan-400 font-medium">
         Cargando V-PASS...
       </div>
     );
   }
 
-  // Vista exclusiva y limpia para el invitado (Repositorio de ticket individual)
   if (route === 'ticket' && ticketCode) {
     return <TicketView code={ticketCode} />;
   }
 
-  // Vistas generales de la plataforma
   if (route === 'login') {
     return <AgencyLogin setAgency={(ag) => { setAgency(ag); setRoute('dashboard'); }} navigate={(r) => setRoute(r)} />;
   }
