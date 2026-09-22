@@ -2,11 +2,11 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   LogOut, Calendar, MapPin, Users, QrCode, Ticket as TicketIcon,
   BarChart3, Loader2, AlertCircle, CheckCircle2, Clock, Plus,
-  UserPlus, ChevronRight, Lock, MessageCircle, X, Download, FileText, Image as ImageIcon, Trash2, Upload
+  UserPlus, ChevronRight, Lock, MessageCircle, X, FileText, Image as ImageIcon, Trash2, History
 } from 'lucide-react';
 import VPassLogo from '@/components/VPassLogo';
 import { supabase, type Agency, type Event, type Validator, type Ticket } from '@/lib/supabase';
-import { PLAN_FEATURES, whatsappLink } from '@/lib/constants';
+import { PLAN_FEATURES } from '@/lib/constants';
 import { CreateEventModal, CreateValidatorModal, AddGuestModal, ReportModal } from '@/components/DashboardModals';
 
 interface Props {
@@ -15,12 +15,13 @@ interface Props {
   navigate: (route: string) => void;
 }
 
-type Tab = 'overview' | 'event' | 'guests' | 'validators' | 'reports';
+type Tab = 'overview' | 'event' | 'history' | 'guests' | 'validators' | 'reports';
 
 export default function AgencyDashboard({ agency, setAgency, navigate }: Props) {
   const [tab, setTab] = useState<Tab>('overview');
   const [events, setEvents] = useState<Event[]>([]);
   const [activeEvent, setActiveEvent] = useState<Event | null>(null);
+  const [historyEvents, setHistoryEvents] = useState<Event[]>([]);
   const [validators, setValidators] = useState<Validator[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,15 +34,36 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
 
   const planInfo = PLAN_FEATURES[agency.plan];
 
+  const isEventExpired = (ev: Event) => {
+    if (!ev.event_date) return false;
+    const eventDateTimeStr = ev.event_time 
+      ? `${ev.event_date}T${ev.event_time}:00` 
+      : `${ev.event_date}T23:59:59`;
+    const eventTime = new Date(eventDateTimeStr).getTime();
+    if (isNaN(eventTime)) return false;
+    const expirationTime = eventTime + (24 * 60 * 60 * 1000);
+    return Date.now() > expirationTime;
+  };
+
   const fetchEvents = useCallback(async () => {
     const { data } = await supabase.from('events').select('*').eq('agency_id', agency.id).order('created_at', { ascending: false });
     const eventsData = (data as Event[]) || [];
     setEvents(eventsData);
-    const active = eventsData.find(e => e.status === 'active' && e.locked);
-    if (active) {
-      setActiveEvent(active);
-      fetchValidators(active.id);
-      fetchTickets(active.id);
+
+    const activeList = eventsData.filter(e => !isEventExpired(e));
+    const expiredList = eventsData.filter(e => isEventExpired(e));
+
+    setHistoryEvents(expiredList);
+
+    const currentActive = activeList.length > 0 ? activeList[0] : null;
+    if (currentActive) {
+      setActiveEvent(currentActive);
+      fetchValidators(currentActive.id);
+      fetchTickets(currentActive.id);
+    } else {
+      setActiveEvent(null);
+      setTickets([]);
+      setValidators([]);
     }
     setLoading(false);
   }, [agency.id]);
@@ -113,6 +135,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
     const eventName = activeEvent?.name || 'Evento V-PASS';
     const eventDate = activeEvent?.event_date || '';
     const eventLocation = activeEvent?.location || '';
+    const bgImage = activeEvent?.bg_image_url || '';
 
     printWindow.document.write(`
       <html>
@@ -120,25 +143,30 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
           <title>Entrada - ${t.attendee_name}</title>
           <style>
             body { font-family: Arial, sans-serif; background: #0f172a; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-            .ticket { background: #1e293b; border: 2px solid #38bdf8; border-radius: 16px; padding: 24px; text-align: center; width: 320px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-            h2 { color: #38bdf8; margin-bottom: 5px; }
-            p { margin: 8px 0; color: #94a3b8; font-size: 14px; }
-            .name { font-size: 20px; font-weight: bold; color: #fff; margin: 12px 0; }
-            .code { font-family: monospace; background: #0f172a; padding: 6px 12px; border-radius: 8px; color: #38bdf8; display: inline-block; margin-top: 8px; }
-            .qr-box { background: #fff; padding: 12px; border-radius: 12px; display: inline-block; margin: 15px 0; }
-            img { width: 160px; height: 160px; display: block; }
+            .ticket { position: relative; background: ${bgImage ? `url(${bgImage}) center/cover no-repeat` : '#1e293b'}; border: 2px solid #38bdf8; border-radius: 16px; padding: 24px; text-align: center; width: 320px; box-shadow: 0 10px 25px rgba(0,0,0,0.8); overflow: hidden; }
+            .overlay { position: absolute; inset: 0; background: rgba(15, 23, 42, 0.75); z-index: 1; }
+            .content { position: relative; z-index: 2; }
+            h2 { color: #38bdf8; margin-bottom: 5px; text-shadow: 0 2px 4px rgba(0,0,0,0.8); }
+            p { margin: 8px 0; color: #cbd5e1; font-size: 14px; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
+            .name { font-size: 20px; font-weight: bold; color: #fff; margin: 12px 0; text-shadow: 0 2px 4px rgba(0,0,0,0.8); }
+            .code { font-family: monospace; background: #0f172a; padding: 6px 12px; border-radius: 8px; color: #38bdf8; display: inline-block; margin-top: 8px; border: 1px solid rgba(56, 189, 248, 0.3); }
+            .qr-box { background: #fff; padding: 10px; border-radius: 12px; display: inline-block; margin: 12px 0; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+            img { width: 150px; height: 150px; display: block; }
           </style>
         </head>
         <body>
           <div class="ticket">
-            <h2>V-PASS TICKET</h2>
-            <p>${eventName}</p>
-            <div class="qr-box">
-              <img src="${qrUrl}" />
+            ${bgImage ? '<div class="overlay"></div>' : ''}
+            <div class="content">
+              <h2>V-PASS TICKET</h2>
+              <p>${eventName}</p>
+              <div class="qr-box">
+                <img src="${qrUrl}" />
+              </div>
+              <div class="name">${t.attendee_name || 'Invitado'}</div>
+              <p>📅 ${eventDate} | 📍 ${eventLocation}</p>
+              <div class="code">Código: ${t.code}</div>
             </div>
-            <div class="name">${t.attendee_name || 'Invitado'}</div>
-            <p>📅 ${eventDate} | 📍 ${eventLocation}</p>
-            <div class="code">Código: ${t.code}</div>
           </div>
           <script>
             window.onload = function() { window.print(); }
@@ -191,7 +219,8 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
         <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
           {[
             { id: 'overview' as Tab, label: 'Resumen', icon: BarChart3 },
-            { id: 'event' as Tab, label: 'Mi evento', icon: Calendar },
+            { id: 'event' as Tab, label: 'Mi evento activo', icon: Calendar },
+            { id: 'history' as Tab, label: 'Historial / Resumen', icon: History },
             { id: 'guests' as Tab, label: 'Invitados', icon: Users },
             { id: 'validators' as Tab, label: 'Validadores', icon: QrCode },
             { id: 'reports' as Tab, label: 'Reportes', icon: TicketIcon },
@@ -222,38 +251,20 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                   {agency.plan_active ? 'Activo' : 'Inactivo'}
                 </span>
               </div>
-              <div className="grid sm:grid-cols-2 gap-3 text-sm">
-                <div className="flex items-center gap-2 text-slate-300">
-                  <TicketIcon size={16} className="text-cyan-400" />
-                  Utilizadas: {tickets.length} de {agency.max_tickets || 'Ilimitadas'}
-                </div>
-                <div className="flex items-center gap-2 text-slate-300">
-                  <Users size={16} className="text-blue-400" />
-                  Validadores activos: {validators.length} / {agency.max_validators}
-                </div>
-              </div>
             </div>
 
             {canCreateEvent ? (
               <div className="card p-8 flex flex-col items-center justify-center text-center">
                 <Calendar size={48} className="text-slate-600 mb-3" />
-                <h3 className="text-lg font-bold text-white mb-2">Crea tu primer evento</h3>
-                <p className="text-sm text-slate-400 mb-4">Configura fecha, hora, ubicación, imagen de fondo y posición del QR</p>
+                <h3 className="text-lg font-bold text-white mb-2">Crea un nuevo evento</h3>
+                <p className="text-sm text-slate-400 mb-4">Configura fecha, hora, ubicación y diseño del QR</p>
                 <button onClick={() => setShowCreateEvent(true)} className="btn-primary flex items-center gap-2">
                   <Plus size={18} /> Crear evento
                 </button>
               </div>
-            ) : !agency.plan_active ? (
-              <div className="card p-6 flex flex-col items-center text-center">
-                <Lock size={40} className="text-slate-600 mb-3" />
-                <p className="text-slate-400 mb-2">Tu plan está inactivo</p>
-                <a href={whatsappLink('Hola, quiero reactivar mi plan de V-PASS')} target="_blank" rel="noopener noreferrer" className="btn-primary text-sm flex items-center gap-2">
-                  <MessageCircle size={16} /> Contactar por WhatsApp
-                </a>
-              </div>
             ) : activeEvent ? (
               <div className="card p-5">
-                <h3 className="text-lg font-bold text-white mb-3">Evento activo</h3>
+                <h3 className="text-lg font-bold text-white mb-3">Evento en curso</h3>
                 <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900/50 border border-slate-800">
                   <div>
                     <p className="font-semibold text-white">{activeEvent.name}</p>
@@ -267,7 +278,16 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                   </button>
                 </div>
               </div>
-            ) : null}
+            ) : (
+              <div className="card p-8 flex flex-col items-center justify-center text-center">
+                <Calendar size={48} className="text-slate-600 mb-3" />
+                <h3 className="text-lg font-bold text-white mb-2">No hay eventos activos</h3>
+                <p className="text-sm text-slate-400 mb-4">Tu evento anterior ha finalizado o expirado (24h posteriores).</p>
+                <button onClick={() => setShowCreateEvent(true)} className="btn-primary flex items-center gap-2">
+                  <Plus size={18} /> Crear nuevo evento
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -281,7 +301,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                     <h3 className="text-xl font-bold text-white">{activeEvent.name}</h3>
                     {activeEvent.description && <p className="text-sm text-slate-400 mt-1">{activeEvent.description}</p>}
                   </div>
-                  <span className="badge bg-green-500/10 text-green-300"><Lock size={12} /> Bloqueado</span>
+                  <span className="badge bg-green-500/10 text-green-300"><Lock size={12} /> Activo (Auto-cierre en 24h)</span>
                 </div>
                 
                 <div className="grid sm:grid-cols-3 gap-4">
@@ -290,139 +310,46 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                   <div className="flex items-center gap-2 text-sm"><MapPin size={16} className="text-green-400" /><div><p className="text-slate-500 text-xs">Ubicación</p><p className="text-white">{activeEvent.location || 'Sin especificar'}</p></div></div>
                 </div>
 
-                <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-4">
-                  <h4 className="text-sm font-semibold text-white">Configuración Visual de la Entrada</h4>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Cargar o enlazar imagen de fondo</label>
-                    <div className="flex items-center gap-3">
-                      <label className="btn-secondary text-xs flex items-center gap-2 cursor-pointer py-2 px-3">
-                        <Upload size={14} />
-                        <span>Subir archivo</span>
-                        <input 
-                          type="file" 
-                          accept="image/*" 
-                          className="hidden"
-                          onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            if (!file) return;
-                            const reader = new FileReader();
-                            reader.onloadend = async () => {
-                              const resUrl = reader.result as string;
-                              await supabase.from('events').update({ bg_image_url: resUrl }).eq('id', activeEvent.id);
-                              setActiveEvent({ ...activeEvent, bg_image_url: resUrl });
-                            };
-                            reader.readAsDataURL(file);
-                          }} 
-                        />
-                      </label>
-                      <input 
-                        type="text" 
-                        value={activeEvent.bg_image_url || ''} 
-                        placeholder="https://..." 
-                        className="input-field text-xs flex-1"
-                        onChange={(e) => setActiveEvent({ ...activeEvent, bg_image_url: e.target.value })}
-                        onBlur={async (e) => {
-                          await supabase.from('events').update({ bg_image_url: e.target.value }).eq('id', activeEvent.id);
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <p className="text-xs text-slate-400">Previsualización del diseño:</p>
-                    <div 
-                      className="relative h-44 rounded-xl bg-slate-950 overflow-hidden flex items-center justify-center border border-slate-800 bg-cover bg-center shadow-inner"
-                      style={activeEvent.bg_image_url ? { backgroundImage: `url(${activeEvent.bg_image_url})` } : {}}
-                    >
-                      <div className="absolute inset-0 bg-black/40" />
-                      <div 
-                        className="absolute bg-white rounded-lg p-2 shadow-2xl transition-all duration-150"
-                        style={{
-                          left: `${activeEvent.qr_pos_x || 50}%`,
-                          top: `${activeEvent.qr_pos_y || 50}%`,
-                          transform: 'translate(-50%, -50%)',
-                          width: `${(activeEvent.qr_size || 30) * 1.6}px`,
-                          height: `${(activeEvent.qr_size || 30) * 1.6}px`,
-                        }}
-                      >
-                        <div className="w-full h-full bg-slate-900 rounded flex items-center justify-center text-[9px] font-bold text-white">QR</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-3 pt-2">
-                    <div>
-                      <label className="block text-xs text-slate-400 mb-1">Pos X: {activeEvent.qr_pos_x || 50}%</label>
-                      <input 
-                        type="range" min={10} max={90} 
-                        value={activeEvent.qr_pos_x || 50} 
-                        onChange={(e) => setActiveEvent({ ...activeEvent, qr_pos_x: parseInt(e.target.value) })}
-                        onMouseUp={async () => {
-                          await supabase.from('events').update({ qr_pos_x: activeEvent.qr_pos_x }).eq('id', activeEvent.id);
-                        }}
-                        className="w-full accent-cyan-400" 
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-slate-400 mb-1">Pos Y: {activeEvent.qr_pos_y || 50}%</label>
-                      <input 
-                        type="range" min={10} max={90} 
-                        value={activeEvent.qr_pos_y || 50} 
-                        onChange={(e) => setActiveEvent({ ...activeEvent, qr_pos_y: parseInt(e.target.value) })}
-                        onMouseUp={async () => {
-                          await supabase.from('events').update({ qr_pos_y: activeEvent.qr_pos_y }).eq('id', activeEvent.id);
-                        }}
-                        className="w-full accent-cyan-400" 
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-slate-400 mb-1">Tamaño QR: {activeEvent.qr_size || 30}%</label>
-                      <input 
-                        type="range" min={10} max={60} 
-                        value={activeEvent.qr_size || 30} 
-                        onChange={(e) => setActiveEvent({ ...activeEvent, qr_size: parseInt(e.target.value) })}
-                        onMouseUp={async () => {
-                          await supabase.from('events').update({ qr_size: activeEvent.qr_size }).eq('id', activeEvent.id);
-                        }}
-                        className="w-full accent-cyan-400" 
-                      />
-                    </div>
-                  </div>
-                </div>
-
                 <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800">
                   <div className="flex flex-wrap gap-2">
                     <button onClick={() => setShowAddGuest(true)} className="btn-primary text-sm flex items-center gap-2"><Plus size={16} /> Agregar invitado</button>
                     <button onClick={() => setTab('validators')} className="btn-secondary text-sm flex items-center gap-2"><Users size={16} /> Validadores</button>
                     <button onClick={() => setShowReport(true)} className="btn-secondary text-sm flex items-center gap-2"><BarChart3 size={16} /> Reporte</button>
                   </div>
-
-                  <button 
-                    onClick={async () => {
-                      if (confirm('Importante, si eliminas este evento no tendrás forma de recuperarlo y no es reembolsable.')) {
-                        await supabase.from('events').delete().eq('id', activeEvent.id);
-                        setActiveEvent(null);
-                        setTickets([]);
-                        setValidators([]);
-                        window.location.reload();
-                      }
-                    }} 
-                    className="px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm font-medium border border-red-500/20 flex items-center gap-1.5 transition-all"
-                  >
-                    <Trash2 size={16} /> Eliminar evento
-                  </button>
                 </div>
               </div>
-            ) : canCreateEvent ? (
-              <div className="card p-12 flex flex-col items-center justify-center text-center">
+            ) : (
+              <div className="card p-12 flex flex-col items-center justify-center text-center space-y-4">
                 <Calendar size={48} className="text-slate-600 mb-3" />
-                <p className="text-slate-400 mb-4">No tienes evento activo</p>
-                <button onClick={() => setShowCreateEvent(true)} className="btn-primary flex items-center gap-2"><Plus size={18} /> Crear evento</button>
+                <p className="text-slate-400">No tienes ningún evento activo actualmente.</p>
+                <button onClick={() => setShowCreateEvent(true)} className="btn-primary flex items-center gap-2">
+                  <Plus size={18} /> Crear nuevo evento
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* HISTORY TAB */}
+        {tab === 'history' && (
+          <div className="space-y-4 animate-fade-in">
+            <h3 className="text-lg font-bold text-white mb-2">Historial de Eventos Finalizados</h3>
+            {historyEvents.length === 0 ? (
+              <div className="card p-12 text-center text-slate-400">
+                <History size={48} className="mx-auto mb-3 text-slate-600" />
+                No hay eventos finalizados en el historial.
               </div>
             ) : (
-              <div className="card p-12 flex flex-col items-center text-center">
-                <Lock size={48} className="text-slate-600 mb-3" />
-                <p className="text-slate-400">Plan inactivo. Contacta por WhatsApp para reactivar.</p>
+              <div className="space-y-3">
+                {historyEvents.map(ev => (
+                  <div key={ev.id} className="card p-4 flex items-center justify-between bg-slate-900/40">
+                    <div>
+                      <p className="font-semibold text-white">{ev.name}</p>
+                      <p className="text-xs text-slate-400 mt-1">📅 {ev.event_date} {ev.event_time ? `- ${ev.event_time} ${ev.am_pm || ''}` : ''}</p>
+                    </div>
+                    <span className="badge bg-slate-800 text-slate-400 border border-slate-700">Finalizado</span>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -440,7 +367,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                 <button 
                   onClick={() => {
                     if (agency.max_tickets && tickets.length >= agency.max_tickets) {
-                      alert(`Has alcanzado el límite de ${agency.max_tickets} entradas de tu plan. Actualiza tu plan para agregar más.`);
+                      alert(`Has alcanzado el límite de ${agency.max_tickets} entradas de tu plan.`);
                       return;
                     }
                     setShowAddGuest(true);
@@ -453,16 +380,14 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
             </div>
 
             {!activeEvent ? (
-              <div className="card p-12 text-center"><Users size={48} className="text-slate-600 mx-auto mb-3" /><p className="text-slate-400">Crea un evento primero</p></div>
+              <div className="card p-12 text-center"><Users size={48} className="text-slate-600 mx-auto mb-3" /><p className="text-slate-400">Crea un evento activo primero</p></div>
             ) : tickets.length === 0 ? (
               <div className="card p-12 text-center"><Users size={48} className="text-slate-600 mx-auto mb-3" /><p className="text-slate-400 mb-4">Sin invitados todavía</p><button onClick={() => setShowAddGuest(true)} className="btn-primary text-sm flex items-center gap-2 mx-auto"><Plus size={16} /> Agregar primer invitado</button></div>
             ) : (
               <div className="space-y-2 max-h-[60vh] overflow-y-auto">
                 {tickets.map(t => {
-                  // Enlace explícito y aislado para el ticket del invitado con hash #ticket/
                   const ticketUrl = `${window.location.origin}/#ticket/${t.code}`;
-                  const guestPhone = t.phone || (t as any).whatsapp || '';
-                  
+                  const guestPhone = (t as any).guest_phone || '';
                   const eventLocation = activeEvent?.location || 'Por confirmar';
                   const eventDateStr = `${activeEvent?.event_date || ''} ${activeEvent?.event_time ? `- ${activeEvent.event_time}${activeEvent.am_pm || ''}` : ''}`;
 
@@ -496,47 +421,11 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                         </span>
 
                         <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={() => setSelectedTicketForModal(t)}
-                            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 transition-colors"
-                            title="Ver Ticket y Código QR"
-                          >
-                            <QrCode size={16} />
-                          </button>
-
-                          <button
-                            onClick={() => downloadQRCodeImage(t.code, t.attendee_name)}
-                            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-blue-400 transition-colors"
-                            title="Descargar imagen QR"
-                          >
-                            <ImageIcon size={16} />
-                          </button>
-
-                          <button
-                            onClick={() => generateTicketPDF(t)}
-                            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-purple-400 transition-colors"
-                            title="Descargar entrada en PDF"
-                          >
-                            <FileText size={16} />
-                          </button>
-
-                          <a
-                            href={waLink}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-green-400 transition-colors"
-                            title="Enviar por WhatsApp"
-                          >
-                            <MessageCircle size={16} />
-                          </a>
-
-                          <button
-                            onClick={() => handleDeleteTicket(t.id)}
-                            className="p-2 rounded-lg bg-slate-800 hover:bg-red-950/40 text-red-400 transition-colors"
-                            title="Eliminar invitado"
-                          >
-                            <Trash2 size={16} />
-                          </button>
+                          <button onClick={() => setSelectedTicketForModal(t)} className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 transition-colors" title="Ver Ticket y QR"><QrCode size={16} /></button>
+                          <button onClick={() => downloadQRCodeImage(t.code, t.attendee_name)} className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-blue-400 transition-colors" title="Descargar imagen QR"><ImageIcon size={16} /></button>
+                          <button onClick={() => generateTicketPDF(t)} className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-purple-400 transition-colors" title="Descargar PDF"><FileText size={16} /></button>
+                          <a href={waLink} target="_blank" rel="noopener noreferrer" className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-green-400 transition-colors" title="Enviar por WhatsApp"><MessageCircle size={16} /></a>
+                          <button onClick={() => handleDeleteTicket(t.id)} className="p-2 rounded-lg bg-slate-800 hover:bg-red-950/40 text-red-400 transition-colors" title="Eliminar invitado"><Trash2 size={16} /></button>
                         </div>
                       </div>
                     </div>
@@ -551,38 +440,21 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
         {tab === 'validators' && (
           <div className="space-y-4 animate-fade-in">
             <div className="flex items-center justify-between">
-              <div><h3 className="text-lg font-bold text-white">Validadores ({validators.length} / {agency.max_validators})</h3><p className="text-sm text-slate-400">Límite de tu plan</p></div>
-              {activeEvent && (
-                <button 
-                  onClick={() => {
-                    if (validators.length >= agency.max_validators) {
-                      alert(`Has alcanzado el límite de ${agency.max_validators} validadores de tu plan.`);
-                      return;
-                    }
-                    setShowCreateValidator(true);
-                  }} 
-                  className="btn-primary text-sm flex items-center gap-2"
-                >
-                  <UserPlus size={16} /> Crear validador
-                </button>
-              )}
+              <div><h3 className="text-lg font-bold text-white">Validadores asignados</h3><p className="text-sm text-slate-400">Credenciales para tu personal de puerta</p></div>
             </div>
             {!activeEvent ? (
-              <div className="card p-12 text-center"><Users size={48} className="text-slate-600 mx-auto mb-3" /><p className="text-slate-400">Crea un evento primero</p></div>
+              <div className="card p-12 text-center"><Users size={48} className="text-slate-600 mx-auto mb-3" /><p className="text-slate-400">Crea un evento activo primero</p></div>
             ) : validators.length === 0 ? (
-              <div className="card p-12 text-center"><Users size={48} className="text-slate-600 mx-auto mb-3" /><p className="text-slate-400 mb-4">Sin validadores</p><button onClick={() => setShowCreateValidator(true)} className="btn-primary text-sm flex items-center gap-2 mx-auto"><UserPlus size={16} /> Crear validador</button></div>
+              <div className="card p-12 text-center"><Users size={48} className="text-slate-600 mx-auto mb-3" /><p className="text-slate-400 mb-4">No hay validadores asignados a este evento.</p></div>
             ) : (
               <div className="space-y-2">
                 {validators.map(v => (
                   <div key={v.id} className="card p-4 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl bg-cyan-400/10 border border-cyan-400/20 flex items-center justify-center"><Users size={18} className="text-cyan-400" /></div>
-                      <div><p className="font-semibold text-white">{v.name}</p><p className="text-sm text-slate-400">{v.email}</p></div>
+                      <div><p className="font-semibold text-white">{v.name}</p><p className="text-sm text-slate-400">Usuario: {v.email}</p></div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`badge ${v.active ? 'bg-green-500/10 text-green-300' : 'bg-slate-800 text-slate-400'}`}>{v.active ? 'Activo' : 'Inactivo'}</span>
-                      <button onClick={async () => { await supabase.from('validators').update({ active: !v.active }).eq('id', v.id); fetchValidators(activeEvent.id); }} className="btn-ghost text-xs">{v.active ? 'Desactivar' : 'Activar'}</button>
-                    </div>
+                    <span className="badge bg-green-500/10 text-green-300">Activo</span>
                   </div>
                 ))}
               </div>
@@ -598,19 +470,12 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
               {activeEvent && <button onClick={() => setShowReport(true)} className="btn-primary text-sm flex items-center gap-2"><BarChart3 size={16} /> Ver reporte detallado</button>}
             </div>
             {!activeEvent ? (
-              <div className="card p-12 text-center"><BarChart3 size={48} className="text-slate-600 mx-auto mb-3" /><p className="text-slate-400">Crea un evento primero</p></div>
-            ) : tickets.length === 0 ? (
-              <div className="card p-12 text-center"><BarChart3 size={48} className="text-slate-600 mx-auto mb-3" /><p className="text-slate-400">Sin datos para reportar</p></div>
+              <div className="card p-12 text-center"><BarChart3 size={48} className="text-slate-600 mx-auto mb-3" /><p className="text-slate-400">Crea un evento activo primero</p></div>
             ) : (
               <div className="grid sm:grid-cols-3 gap-4">
                 <StatCard icon={TicketIcon} label="Total" value={tickets.length} color="cyan" />
                 <StatCard icon={CheckCircle2} label="Ingresaron" value={tickets.filter(t => t.status === 'used').length} color="green" />
                 <StatCard icon={Clock} label="Sin usar" value={tickets.filter(t => t.status === 'valid').length} color="yellow" />
-              </div>
-            )}
-            {agency.plan !== 'premium' && (
-              <div className="card p-4 flex items-center gap-2 text-sm text-slate-400">
-                <Lock size={16} className="text-yellow-400" /> Reporte detallado descargable (PDF) disponible solo en Plan Premium (S/ 250)
               </div>
             )}
           </div>
@@ -619,36 +484,43 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
 
       {selectedTicketForModal && activeEvent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-          <div className="card max-w-sm w-full p-6 relative bg-slate-900 border border-slate-800 text-center space-y-4">
-            <button onClick={() => setSelectedTicketForModal(null)} className="absolute top-3 right-3 text-slate-400 hover:text-white">
-              <X size={20} />
-            </button>
-            <h3 className="text-lg font-bold text-white">Entrada Digital</h3>
-            <p className="text-sm text-cyan-400 font-semibold">{activeEvent.name}</p>
-            <div className="p-4 bg-white rounded-xl inline-block mx-auto">
-              <img 
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${selectedTicketForModal.code}`} 
-                alt="QR Code" 
-                className="w-36 h-36 mx-auto"
-              />
-            </div>
-            <div>
-              <p className="text-base font-bold text-white">{selectedTicketForModal.attendee_name}</p>
-              <p className="text-xs text-slate-400 font-mono mt-1">Código: {selectedTicketForModal.code}</p>
-            </div>
-            <div className="flex gap-2 pt-2">
-              <button 
-                onClick={() => downloadQRCodeImage(selectedTicketForModal.code, selectedTicketForModal.attendee_name)}
-                className="btn-secondary flex-1 text-xs flex items-center justify-center gap-1.5"
-              >
-                <ImageIcon size={14} /> Imagen
+          <div 
+            className="card max-w-sm w-full p-6 relative bg-slate-900 border border-slate-800 text-center space-y-4 bg-cover bg-center overflow-hidden shadow-2xl"
+            style={activeEvent.bg_image_url ? { backgroundImage: `url(${activeEvent.bg_image_url})` } : {}}
+          >
+            {activeEvent.bg_image_url && <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" />}
+            <div className="relative z-10">
+              <button onClick={() => setSelectedTicketForModal(null)} className="absolute top-1 right-1 text-slate-400 hover:text-white bg-slate-900/80 p-1.5 rounded-full">
+                <X size={18} />
               </button>
-              <button 
-                onClick={() => generateTicketPDF(selectedTicketForModal)}
-                className="btn-primary flex-1 text-xs flex items-center justify-center gap-1.5"
-              >
-                <FileText size={14} /> PDF
-              </button>
+              <h3 className="text-lg font-bold text-white mb-1">Entrada Digital</h3>
+              <p className="text-xs text-cyan-400 font-semibold mb-3">{activeEvent.name}</p>
+              <div className="p-3 bg-white rounded-xl inline-block mx-auto shadow-lg">
+                <img 
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${selectedTicketForModal.code}`} 
+                  alt="QR Code" 
+                  className="w-36 h-36 mx-auto"
+                />
+              </div>
+              <div className="mt-3">
+                <p className="text-base font-bold text-white">{selectedTicketForModal.attendee_name}</p>
+                <p className="text-xs text-slate-300 mt-1">📅 {activeEvent.event_date} {activeEvent.event_time ? `• ${activeEvent.event_time} ${activeEvent.am_pm || ''}` : ''}</p>
+                <p className="text-xs text-slate-400 font-mono mt-2 bg-slate-950/60 py-1 px-2 rounded border border-slate-800 inline-block">Código: {selectedTicketForModal.code}</p>
+              </div>
+              <div className="flex gap-2 pt-3">
+                <button 
+                  onClick={() => downloadQRCodeImage(selectedTicketForModal.code, selectedTicketForModal.attendee_name)}
+                  className="btn-secondary flex-1 text-xs flex items-center justify-center gap-1.5"
+                >
+                  <ImageIcon size={14} /> Imagen
+                </button>
+                <button 
+                  onClick={() => generateTicketPDF(selectedTicketForModal)}
+                  className="btn-primary flex-1 text-xs flex items-center justify-center gap-1.5"
+                >
+                  <FileText size={14} /> PDF
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -664,10 +536,10 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
 
 function StatCard({ icon: Icon, label, value, color }: { icon: any; label: string; value: string | number; color: string }) {
   const colors: Record<string, string> = {
-    cyan: 'text-cyan-400 bg-cyan-400/10 border-cyan-400/20',
-    blue: 'text-blue-400 bg-blue-400/10 border-blue-400/20',
-    green: 'text-green-400 bg-green-400/10 border-green-400/20',
-    yellow: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20',
+    cyan: 'text-cyan-400 bg-cyan-400/15 border-cyan-400/30',
+    blue: 'text-blue-400 bg-blue-400/15 border-blue-400/30',
+    green: 'text-green-400 bg-green-400/15 border-green-400/30',
+    yellow: 'text-yellow-400 bg-yellow-400/15 border-yellow-400/30',
   };
   return (
     <div className="card p-5">
