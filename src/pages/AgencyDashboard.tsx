@@ -158,20 +158,20 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
 
   const downloadQRCodeImage = async (ticketCode: string, attendeeName: string) => {
     try {
-      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${ticketCode}`;
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${ticketCode}`;
       const response = await fetch(qrUrl);
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `QR-${attendeeName || 'invitado'}-${ticketCode}.png`;
+      link.download = `Entrada-${attendeeName || 'invitado'}-${ticketCode}.png`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (err) {
       console.error("Error al descargar imagen QR:", err);
-      alert("No se pudo descargar la imagen del QR.");
+      alert("No se pudo descargar la imagen.");
     }
   };
 
@@ -185,7 +185,8 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${t.code}`;
     const eventName = activeEvent?.name || 'Evento V-PASS';
     const eventDate = activeEvent?.event_date || '';
-    const eventLocation = activeEvent?.location || '';
+    const eventTime = activeEvent?.event_time ? `${activeEvent.event_time} ${activeEvent.am_pm || ''}` : '';
+    const eventLocation = activeEvent?.location || 'Por confirmar';
     const bgImage = activeEvent?.bg_image_url || '';
 
     printWindow.document.write(`
@@ -196,14 +197,14 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
             body { font-family: Arial, sans-serif; background: #090d16; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
             .ticket-card {
               position: relative;
-              width: 360px;
-              border-radius: 20px;
+              width: 380px;
+              border-radius: 24px;
               overflow: hidden;
               border: 2px solid #38bdf8;
-              box-shadow: 0 15px 35px rgba(0,0,0,0.9);
+              box-shadow: 0 20px 40px rgba(0,0,0,0.9);
               background: ${bgImage ? `url(${bgImage}) center/cover no-repeat` : '#1e293b'};
               text-align: center;
-              padding: 30px 20px;
+              padding: 35px 20px;
             }
             .overlay {
               position: absolute;
@@ -215,12 +216,12 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
               position: relative;
               z-index: 2;
             }
-            h2 { color: #38bdf8; margin: 0 0 5px 0; font-size: 22px; text-transform: uppercase; letter-spacing: 1px; }
-            .event-name { font-size: 15px; color: #94a3b8; margin-bottom: 20px; font-weight: 600; }
-            .qr-container { background: #fff; padding: 12px; border-radius: 14px; display: inline-block; margin-bottom: 15px; box-shadow: 0 8px 20px rgba(0,0,0,0.5); }
+            h2 { color: #38bdf8; margin: 0 0 5px 0; font-size: 20px; text-transform: uppercase; letter-spacing: 1px; }
+            .event-name { font-size: 16px; color: #cbd5e1; margin-bottom: 20px; font-weight: bold; }
+            .qr-container { background: #fff; padding: 12px; border-radius: 16px; display: inline-block; margin-bottom: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.6); }
             .qr-container img { width: 160px; height: 160px; display: block; }
-            .attendee { font-size: 20px; font-weight: bold; color: #fff; margin: 10px 0 5px 0; }
-            .details { font-size: 13px; color: #cbd5e1; margin-bottom: 15px; }
+            .attendee { font-size: 22px; font-weight: bold; color: #fff; margin: 10px 0 5px 0; }
+            .details { font-size: 13px; color: #94a3b8; margin-bottom: 15px; }
             .code-badge { font-family: monospace; background: #0f172a; border: 1px solid rgba(56, 189, 248, 0.4); padding: 8px 14px; border-radius: 8px; color: #38bdf8; font-size: 13px; display: inline-block; }
           </style>
         </head>
@@ -234,7 +235,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                 <img src="${qrUrl}" />
               </div>
               <div class="attendee">${t.attendee_name || 'Invitado'}</div>
-              <div class="details">📅 ${eventDate} | 📍 ${eventLocation}</div>
+              <div class="details">📅 ${eventDate} ${eventTime ? `• ${eventTime}` : ''} | 📍 ${eventLocation}</div>
               <div class="code-badge">Código: ${t.code}</div>
             </div>
           </div>
@@ -616,28 +617,41 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
               </button>
               <h3 className="text-lg font-bold text-white mb-1">Entrada Digital</h3>
               <p className="text-xs text-cyan-400 font-semibold mb-3">{activeEvent.name}</p>
-              <div className="p-3 bg-white rounded-xl inline-block mx-auto shadow-lg">
-                <img 
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${selectedTicketForModal.code}`} 
-                  alt="QR Code" 
-                  className="w-36 h-36 mx-auto"
-                />
+              
+              {/* Contenedor del Ticket con Flyer Adaptativo Real y QR Superpuesto */}
+              <div className="relative rounded-2xl overflow-hidden border border-cyan-500/40 p-4 shadow-2xl bg-slate-950">
+                {activeEvent.bg_image_url && (
+                  <div className="absolute inset-0 z-0">
+                    <img src={activeEvent.bg_image_url} alt="Flyer" className="w-full h-full object-cover opacity-60 filter brightness-90" />
+                    <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-[2px]" />
+                  </div>
+                )}
+                <div className="relative z-10 space-y-3">
+                  <div className="p-2.5 bg-white rounded-xl inline-block mx-auto shadow-xl border border-white/20">
+                    <img 
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${selectedTicketForModal.code}`} 
+                      alt="QR Code" 
+                      className="w-32 h-32 mx-auto rounded"
+                    />
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-white text-shadow">{selectedTicketForModal.attendee_name}</p>
+                    <p className="text-xs text-cyan-300 font-medium mt-0.5">📅 {activeEvent.event_date} {activeEvent.event_time ? `• ${activeEvent.event_time} ${activeEvent.am_pm || ''}` : ''}</p>
+                    <p className="text-xs text-slate-300 font-mono mt-1.5 bg-slate-950/80 py-1 px-2 rounded border border-cyan-500/30 inline-block">Código: {selectedTicketForModal.code}</p>
+                  </div>
+                </div>
               </div>
-              <div className="mt-3">
-                <p className="text-base font-bold text-white">{selectedTicketForModal.attendee_name}</p>
-                <p className="text-xs text-slate-300 mt-1">📅 {activeEvent.event_date} {activeEvent.event_time ? `• ${activeEvent.event_time} ${activeEvent.am_pm || ''}` : ''}</p>
-                <p className="text-xs text-slate-400 font-mono mt-2 bg-slate-950/60 py-1 px-2 rounded border border-slate-800 inline-block">Código: {selectedTicketForModal.code}</p>
-              </div>
-              <div className="flex gap-2 pt-3">
+
+              <div className="flex gap-2 pt-2">
                 <button 
                   onClick={() => downloadQRCodeImage(selectedTicketForModal.code, selectedTicketForModal.attendee_name)}
-                  className="btn-secondary flex-1 text-xs flex items-center justify-center gap-1.5"
+                  className="btn-secondary flex-1 text-xs flex items-center justify-center gap-1.5 py-2.5"
                 >
                   <ImageIcon size={14} /> Imagen
                 </button>
                 <button 
                   onClick={() => generateTicketPDF(selectedTicketForModal)}
-                  className="btn-primary flex-1 text-xs flex items-center justify-center gap-1.5"
+                  className="btn-primary flex-1 text-xs flex items-center justify-center gap-1.5 py-2.5"
                 >
                   <FileText size={14} /> PDF
                 </button>

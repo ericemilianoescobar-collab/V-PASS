@@ -52,8 +52,7 @@ export default function TicketView({ code }: Props) {
     if (!ticket || !event) return;
     setActionLoading(true);
     try {
-      // Generamos una captura limpia con el arte completo integrado
-      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${ticket.code}`;
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${ticket.code}`;
       const res = await fetch(qrUrl);
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
@@ -90,14 +89,14 @@ export default function TicketView({ code }: Props) {
             body { font-family: Arial, sans-serif; background: #090d16; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
             .ticket-card {
               position: relative;
-              width: 360px;
-              border-radius: 20px;
+              width: 380px;
+              border-radius: 24px;
               overflow: hidden;
               border: 2px solid #38bdf8;
-              box-shadow: 0 15px 35px rgba(0,0,0,0.9);
+              box-shadow: 0 20px 40px rgba(0,0,0,0.9);
               background: ${bgImage ? `url(${bgImage}) center/cover no-repeat` : '#1e293b'};
               text-align: center;
-              padding: 30px 20px;
+              padding: 35px 20px;
             }
             .overlay {
               position: absolute;
@@ -109,12 +108,12 @@ export default function TicketView({ code }: Props) {
               position: relative;
               z-index: 2;
             }
-            h2 { color: #38bdf8; margin: 0 0 5px 0; font-size: 22px; text-transform: uppercase; letter-spacing: 1px; }
-            .event-name { font-size: 15px; color: #94a3b8; margin-bottom: 20px; font-weight: 600; }
-            .qr-container { background: #fff; padding: 12px; border-radius: 14px; display: inline-block; margin-bottom: 15px; box-shadow: 0 8px 20px rgba(0,0,0,0.5); }
+            h2 { color: #38bdf8; margin: 0 0 5px 0; font-size: 20px; text-transform: uppercase; letter-spacing: 1px; }
+            .event-name { font-size: 16px; color: #cbd5e1; margin-bottom: 20px; font-weight: bold; }
+            .qr-container { background: #fff; padding: 12px; border-radius: 16px; display: inline-block; margin-bottom: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.6); }
             .qr-container img { width: 160px; height: 160px; display: block; }
-            .attendee { font-size: 20px; font-weight: bold; color: #fff; margin: 10px 0 5px 0; }
-            .details { font-size: 13px; color: #cbd5e1; margin-bottom: 15px; }
+            .attendee { font-size: 22px; font-weight: bold; color: #fff; margin: 10px 0 5px 0; }
+            .details { font-size: 13px; color: #94a3b8; margin-bottom: 15px; }
             .code-badge { font-family: monospace; background: #0f172a; border: 1px solid rgba(56, 189, 248, 0.4); padding: 8px 14px; border-radius: 8px; color: #38bdf8; font-size: 13px; display: inline-block; }
           </style>
         </head>
@@ -128,7 +127,7 @@ export default function TicketView({ code }: Props) {
                 <img src="${qrUrl}" />
               </div>
               <div class="attendee">${ticket.attendee_name || 'Invitado'}</div>
-              <div class="details">📅 ${event.event_date || ''} ${event.event_time ? `• ${event.event_time}${event.am_pm || ''}` : ''}</div>
+              <div class="details">📅 ${event.event_date || ''} ${event.event_time ? `• ${event.event_time}${event.am_pm || ''}` : ''} | 📍 ${event.location || 'Por confirmar'}</div>
               <div class="code-badge">Código: ${ticket.code}</div>
             </div>
           </div>
@@ -182,20 +181,22 @@ export default function TicketView({ code }: Props) {
           <VPassLogo size="sm" />
         </div>
 
-        {/* Tarjeta del Ticket con la imagen de fondo adaptativa y QR superpuesto */}
-        <div 
-          className="card relative overflow-hidden text-center p-6 border border-cyan-500/30 shadow-2xl bg-cover bg-center"
-          style={event.bg_image_url ? { backgroundImage: `url(${event.bg_image_url})` } : { backgroundColor: '#1e293b' }}
-        >
-          {event.bg_image_url && <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-md" />}
-          
+        {/* Tarjeta del Ticket con la imagen de fondo adaptativa real */}
+        <div className="relative rounded-3xl overflow-hidden border border-cyan-500/40 shadow-2xl bg-slate-950 p-6 text-center">
+          {event.bg_image_url && (
+            <div className="absolute inset-0 z-0">
+              <img src={event.bg_image_url} alt="Flyer" className="w-full h-full object-cover opacity-60 filter brightness-90" />
+              <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-[2px]" />
+            </div>
+          )}
+
           <div className="relative z-10 space-y-4">
             <div>
-              <span className="text-xs font-bold uppercase tracking-widest text-cyan-400">V-PASS TICKET</span>
-              <h2 className="text-lg font-extrabold text-white mt-1">{event.name}</h2>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-cyan-400">V-PASS TICKET</span>
+              <h2 className="text-lg font-extrabold text-white mt-1 text-shadow">{event.name}</h2>
             </div>
 
-            <div className="p-3.5 bg-white rounded-2xl inline-block shadow-2xl border border-white/20">
+            <div className="p-3 bg-white rounded-2xl inline-block shadow-2xl border border-white/20">
               <img 
                 src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${ticket.code}`} 
                 alt="QR Code" 
@@ -204,21 +205,21 @@ export default function TicketView({ code }: Props) {
             </div>
 
             <div>
-              <p className="text-xl font-bold text-white">{ticket.attendee_name || 'Invitado'}</p>
-              <div className="flex items-center justify-center gap-2 text-xs text-slate-300 mt-1.5">
+              <p className="text-xl font-bold text-white text-shadow">{ticket.attendee_name || 'Invitado'}</p>
+              <div className="flex items-center justify-center gap-1.5 text-xs text-cyan-200 mt-1 font-medium">
                 <Calendar size={14} className="text-cyan-400" />
                 <span>{event.event_date || ''} {event.event_time ? `• ${event.event_time} ${event.am_pm || ''}` : ''}</span>
               </div>
               {event.location && (
-                <div className="flex items-center justify-center gap-2 text-xs text-slate-300 mt-1">
+                <div className="flex items-center justify-center gap-1.5 text-xs text-slate-200 mt-1">
                   <MapPin size={14} className="text-green-400" />
                   <span>{event.location}</span>
                 </div>
               )}
             </div>
 
-            <div className="pt-2">
-              <span className="font-mono text-xs bg-slate-950/80 text-cyan-300 px-3 py-1.5 rounded-lg border border-cyan-500/30 inline-block">
+            <div className="pt-1">
+              <span className="font-mono text-xs bg-slate-950/90 text-cyan-300 px-3 py-1.5 rounded-lg border border-cyan-500/40 inline-block shadow">
                 Código: {ticket.code}
               </span>
             </div>
