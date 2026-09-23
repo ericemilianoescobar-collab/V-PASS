@@ -461,7 +461,8 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
               ) : (
                 <div className="space-y-2 max-h-[60vh] overflow-y-auto">
                   {tickets.map(t => {
-                    const ticketUrl = `${window.location.origin}/#ticket/${t.code}`;
+                    // Envolvemos el enlace entre < > para evitar que WhatsApp muestre la tarjeta de previsualización (Open Graph)
+                    const ticketUrl = `<${window.location.origin}/#ticket/${t.code}>`;
                     const guestPhone = (t as any).guest_phone || '';
                     const eventLocation = activeEvent?.location || 'Por confirmar';
                     const eventDateStr = `${activeEvent?.event_date || ''} ${activeEvent?.event_time ? `- ${activeEvent.event_time}${activeEvent.am_pm || ''}` : ''}`;
@@ -649,14 +650,15 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                   {!activeEvent && <p className="text-[11px] text-yellow-400 text-center">Debe haber un evento activo en la agencia.</p>}
                 </form>
 
-                {/* Listado Privado Independiente */}
+                {/* Listado Privado Independiente con el mensaje completo idéntico */}
                 <div className="space-y-2 max-h-48 overflow-y-auto">
                   <p className="text-xs font-semibold text-slate-400">Listado de registros:</p>
                   {supportTickets.length === 0 ? (
                     <p className="text-xs text-slate-500 text-center py-4">No hay registros generados aún.</p>
                   ) : (
                     supportTickets.map(st => {
-                      const ticketUrl = `${window.location.origin}/#ticket/${st.code}`;
+                      // Envolvemos el enlace entre < > para anular la tarjeta de vista previa de WhatsApp
+                      const ticketUrl = `<${window.location.origin}/#ticket/${st.code}>`;
                       const phone = (st as any).guest_phone || '';
                       const eventLocation = activeEvent?.location || 'Por confirmar';
                       const eventDateStr = `${activeEvent?.event_date || ''} ${activeEvent?.event_time ? `- ${activeEvent.event_time}${activeEvent.am_pm || ''}` : ''}`;
