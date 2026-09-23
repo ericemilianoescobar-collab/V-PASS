@@ -480,10 +480,10 @@ function ReportStat({ label, value, color }: { label: string; value: number; col
   );
 }
 
-// ============ 5. SOPORTE TÉCNICO CON ACCESO A CORTESÍAS ============
+// ============ 5. SOPORTE TÉCNICO (CORREGIDO SIN MAESTRO Y LIBRE DE BLOQUEO .COM) ============
 
 export function SupportModal({ onClose, onSupportLoginSuccess }: { onClose: () => void; onSupportLoginSuccess: () => void }) {
-  const [email, setEmail] = useState('');
+  const [credential, setCredential] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -494,20 +494,23 @@ export function SupportModal({ onClose, onSupportLoginSuccess }: { onClose: () =
     setError('');
 
     setTimeout(() => {
-      // Credenciales de acceso para el soporte técnico
-      if (email.trim().toLowerCase() === 'soporte@vpass.com' && password === 'soporte2026*') {
+      // Validación estricta con las credenciales que utilizas
+      if (
+        credential.trim().toUpperCase() === 'V-PASS172417@.COM' && 
+        password === 'M@rciano172417'
+      ) {
         setLoading(false);
         onClose();
         onSupportLoginSuccess();
       } else {
-        setError('Correo o contraseña de soporte técnico incorrectos.');
+        setError('Credenciales de soporte técnico incorrectas.');
         setLoading(false);
       }
-    }, 600);
+    }, 500);
   };
 
   return (
-    <ModalShell title="Acceso a Soporte Técnico" onClose={onClose}>
+    <ModalShell title="Soporte técnico" onClose={onClose}>
       <form onSubmit={handleSupportLogin} className="space-y-4">
         <div className="flex items-center gap-2 p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 text-xs">
           <HelpCircle size={16} className="shrink-0" />
@@ -517,14 +520,14 @@ export function SupportModal({ onClose, onSupportLoginSuccess }: { onClose: () =
         {error && <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">{error}</div>}
 
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-1">Correo de Soporte</label>
+          <label className="block text-sm font-medium text-slate-300 mb-1">Usuario / Credencial</label>
           <input 
-            type="email" 
-            value={email} 
-            onChange={e => setEmail(e.target.value)} 
+            type="text" 
+            value={credential} 
+            onChange={e => setCredential(e.target.value)} 
             required 
-            className="input-field" 
-            placeholder="soporte@vpass.com" 
+            className="input-field uppercase" 
+            placeholder="V-PASS172417@.COM" 
           />
         </div>
         <div>
@@ -540,7 +543,7 @@ export function SupportModal({ onClose, onSupportLoginSuccess }: { onClose: () =
         </div>
 
         <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2">
-          {loading ? <Loader2 size={18} className="animate-spin" /> : <Lock size={18} />} Ingresar a Panel de Soporte
+          {loading ? <Loader2 size={18} className="animate-spin" /> : <Lock size={18} />} Acceder
         </button>
       </form>
     </ModalShell>
