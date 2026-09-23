@@ -94,7 +94,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
         const exists = currentList.some(v => v.name === valName);
         if (!exists) {
           const defaultUser = `validador${i}_${eventId.substring(0, 4)}`;
-          const defaultPass = Math.random().toString(36.substring(2, 8));
+          const defaultPass = Math.random().toString(36).substring(2, 8);
           await supabase.from('validators').insert({
             event_id: eventId,
             name: valName,
