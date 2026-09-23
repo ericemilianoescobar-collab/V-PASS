@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import {
   LogOut, Camera, CheckCircle2, XCircle, AlertTriangle, Loader2,
-  QrCode, User, Search, Hand, Keyboard, Pause, Play, RefreshCcw
+  QrCode, User, Search, Keyboard, Pause, Play, RefreshCcw
 } from 'lucide-react';
 import VPassLogo from '@/components/VPassLogo';
 import { supabase } from '@/lib/supabase';
@@ -33,7 +33,7 @@ interface GuestSearchResult {
   status: string;
 }
 
-// Generador de sonidos sintéticos nativos (sin archivos externos)
+// Sonidos sintéticos nativos (sin archivos externos)
 const playSound = (type: 'success' | 'error') => {
   try {
     const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -61,15 +61,31 @@ const playSound = (type: 'success' | 'error') => {
       osc.stop(audioCtx.currentTime + 0.4);
     }
   } catch {
-    // Los navegadores bloquean audio si no ha habido interacción previa del usuario
+    // Los navegadores bloquean audio si no hubo interacción previa
   }
 };
 
 export default function ValidatorScanner({ validatorData, onLogout }: Props) {
-  const safeValidatorId = validatorData?.validatorId || localStorage.getItem('vpass_validator_id') || '';
-  const safeValidatorName = validatorData?.validatorName || localStorage.getItem('vpass_validator_name') || 'Validador';
-  const safeEventName = validatorData?.eventName || localStorage.getItem('vpass_event_name') || 'Evento';
-  const safeEventId = validatorData?.eventId || localStorage.getItem('vpass_event_id') || '';
+  // Búsqueda robusta del ID del validador y evento en múltiples fuentes de almacenamiento
+  const safeValidatorId = 
+    validatorData?.validatorId || 
+    localStorage.getItem('vpass_validator_id') || 
+    localStorage.getItem('validator_id') || '';
+
+  const safeValidatorName = 
+    validatorData?.validatorName || 
+    localStorage.getItem('vpass_validator_name') || 
+    localStorage.getItem('validator_name') || 'Validador';
+
+  const safeEventName = 
+    validatorData?.eventName || 
+    localStorage.getItem('vpass_event_name') || 
+    localStorage.getItem('event_name') || 'Evento';
+
+  const safeEventId = 
+    validatorData?.eventId || 
+    localStorage.getItem('vpass_event_id') || 
+    localStorage.getItem('event_id') || '';
 
   const [scanning, setScanning] = useState(false);
   const [lastResult, setLastResult] = useState<ScanResult | null>(null);
@@ -94,7 +110,7 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
         }
         await scannerRef.current.clear();
       } catch {
-        // Ignorar
+        // Ignorar errores al limpiar
       }
       scannerRef.current = null;
     }
@@ -103,7 +119,7 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
 
   const handleScan = useCallback(async (code: string) => {
     if (!safeValidatorId) {
-      setError('Falta el ID del validador. Por favor vuelve a iniciar sesión.');
+      setError('Falta el ID del validador. Por favor vuelve a iniciar sesión desde el panel principal.');
       return;
     }
     try {
@@ -111,10 +127,20 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
         p_code: code,
         p_validator_id: safeValidatorId,
       });
-      if (rpcError || !data || !data[0]) return;
-      const r = data[0];
+      
+      if (rpcError) {
+        setError(`Error al validar: ${rpcError.message}`);
+        playSound('error');
+        return;
+      }
 
-      // Determinar si fue exitoso o error
+      if (!data || !data[0]) {
+        setError('No se obtuvo respuesta del servidor de validación.');
+        playSound('error');
+        return;
+      }
+
+      const r = data[0];
       const isSuccess = r.status === 'success';
       playSound(isSuccess ? 'success' : 'error');
 
@@ -126,7 +152,8 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
       };
       setLastResult(result);
       setScanHistory((prev) => [result, ...prev].slice(0, 50));
-    } catch {
+    } catch (err: any) {
+      setError(`Excepción en validación: ${err?.message || 'Error desconocido'}`);
       playSound('error');
     }
   }, [safeValidatorId]);
@@ -134,6 +161,11 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
   const startScanning = useCallback(async () => {
     setError('');
     
+    if (!safeValidatorId) {
+      setError('Falta el ID del validador. Inicia sesión correctamente.');
+      return;
+    }
+
     if (scannerRef.current) {
       try {
         if (scannerRef.current.isScanning) {
@@ -153,7 +185,7 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
         const scanner = new Html5Qrcode(containerId);
         scannerRef.current = scanner;
         
-        // Obtener ancho disponible para calcular un QR cuadrado exacto
+        // Calcular tamaño cuadrado exacto adaptado a pantallas móviles
         const boxSize = Math.min(window.innerWidth - 64, 260);
 
         await scanner.start(
@@ -167,7 +199,7 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
             if (cooldownRef.current) return;
             cooldownRef.current = true;
             await handleScan(decodedText);
-            // Cooldown estricto de 1.5 segundos para validación fluida pero controlada
+            // Cooldown estricto de 1.5 segundos para evitar lecturas repetidas
             setTimeout(() => { cooldownRef.current = false; }, 1500);
           },
           () => {}
@@ -178,14 +210,18 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
         scannerRef.current = null;
       }
     }, 150);
-  }, [handleScan]);
+  }, [safeValidatorId, handleScan]);
 
   useEffect(() => {
-    startScanning();
+    if (safeValidatorId) {
+      startScanning();
+    } else {
+      setError('Falta el ID del validador. Por favor vuelve a iniciar sesión.');
+    }
     return () => {
       void stopScanning();
     };
-  }, [startScanning, stopScanning]);
+  }, [safeValidatorId, startScanning, stopScanning]);
 
   const handleManualSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -284,7 +320,7 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
     <div className="min-h-screen bg-slate-950 text-slate-100 relative overflow-x-hidden flex flex-col">
       <div className="absolute inset-0 bg-grid pointer-events-none opacity-20" />
 
-      {/* PANTALLA COMPLETA DE ALERTA DE ESCANEO (Feedback Inmediato) */}
+      {/* PANTALLA COMPLETA DE ALERTA DE ESCANEO */}
       {lastResult && cfg && Icon && (
         <div 
           onClick={handleClearOverlay}
@@ -340,7 +376,7 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
               <AlertTriangle size={18} className="text-red-400 shrink-0" />
               <p>{error}</p>
             </div>
-            <button onClick={() => window.location.reload()} className="px-2.5 py-1 rounded bg-red-500/20 hover:bg-red-500/30 text-white font-medium flex items-center gap-1">
+            <button onClick={() => window.location.reload()} className="px-2.5 py-1 rounded bg-red-500/20 hover:bg-red-500/30 text-white font-medium flex items-center gap-1 shrink-0">
               <RefreshCcw size={12} /> Recargar
             </button>
           </div>
