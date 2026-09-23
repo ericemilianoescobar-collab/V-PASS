@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { X, AlertCircle, Loader2, Plus, UserPlus, Ticket as TicketIcon, Lock, Upload, HelpCircle, DollarSign } from 'lucide-react';
 import { supabase, type Agency, type Event } from '@/lib/supabase';
 import { generateTicketCode } from '@/lib/constants';
@@ -28,15 +28,14 @@ export function CreateEventModal({ agencyId, onClose, onCreated }: { agencyId: s
   const [amPm, setAmPm] = useState<'AM' | 'PM'>('PM');
   const [location, setLocation] = useState('');
   const [bgImageUrl, setBgImageUrl] = useState('');
-  const [imageAspect, setImageAspect] = useState<number>(16 / 9); // Proporción dinámica adaptativa
+  const [imageAspect, setImageAspect] = useState<number>(16 / 9);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [qrPosX, setQrPosX] = useState(50);
   const [qrPosY, setQrPosY] = useState(50);
   const [qrSize, setQrSize] = useState(30);
   
-  // Nuevos estados financieros (Solo para el organizador)
+  // Único campo financiero necesario
   const [precioEntrada, setPrecioEntrada] = useState('');
-  const [cantidadEstimada, setCantidadEstimada] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -102,7 +101,7 @@ export function CreateEventModal({ agencyId, onClose, onCreated }: { agencyId: s
       qr_pos_y: qrPosY,
       qr_size: qrSize,
       price: parseFloat(precioEntrada) || 0,
-      estimated_tickets: parseInt(cantidadEstimada) || 0,
+      estimated_tickets: 0,
       locked: true,
     }).select().single();
 
@@ -113,8 +112,6 @@ export function CreateEventModal({ agencyId, onClose, onCreated }: { agencyId: s
     }
     onCreated(data as Event);
   };
-
-  const gananciaProyectada = (parseFloat(precioEntrada) || 0) * (parseInt(cantidadEstimada) || 0);
 
   return (
     <ModalShell title="Crear evento" onClose={onClose} wide>
@@ -145,45 +142,24 @@ export function CreateEventModal({ agencyId, onClose, onCreated }: { agencyId: s
           <input value={location} onChange={e => setLocation(e.target.value)} className="input-field" placeholder="Lugar del evento" />
         </div>
 
-        {/* SECCIÓN FINANCIERA / MATEMÁTICA PARA EL ORGANIZADOR */}
-        <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
+        {/* CONTROL FINANCIERO: SOLO PRECIO DE ENTRADA */}
+        <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
           <div className="flex items-center gap-2">
             <DollarSign size={16} className="text-cyan-400" />
             <h4 className="text-xs font-bold text-white uppercase tracking-wider">Control Financiero (Solo para el Organizador)</h4>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Precio de la entrada ($ / S/.)</label>
-              <input 
-                type="number" 
-                step="0.01" 
-                min="0"
-                value={precioEntrada} 
-                onChange={e => setPrecioEntrada(e.target.value)} 
-                className="input-field text-xs" 
-                placeholder="Ej. 25.00" 
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Entradas estimadas</label>
-              <input 
-                type="number" 
-                min="0"
-                value={cantidadEstimada} 
-                onChange={e => setCantidadEstimada(e.target.value)} 
-                className="input-field text-xs" 
-                placeholder="Ej. 100" 
-              />
-            </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Precio de la entrada ($ / S/.)</label>
+            <input 
+              type="number" 
+              step="0.01" 
+              min="0"
+              value={precioEntrada} 
+              onChange={e => setPrecioEntrada(e.target.value)} 
+              className="input-field text-xs" 
+              placeholder="Ej. 25.00" 
+            />
           </div>
-          {gananciaProyectada > 0 && (
-            <div className="flex justify-between items-center text-xs pt-1 border-t border-slate-800 text-slate-300">
-              <span>Ganancia Proyectada:</span>
-              <span className="text-emerald-400 font-bold text-sm">
-                {new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN' }).format(gananciaProyectada)}
-              </span>
-            </div>
-          )}
         </div>
 
         <div>
@@ -204,7 +180,7 @@ export function CreateEventModal({ agencyId, onClose, onCreated }: { agencyId: s
           />
         </div>
 
-        {/* PREVISUALIZACIÓN ADAPTADA AL ASPECT RATIO REAL DE LA IMAGEN */}
+        {/* PREVISUALIZACIÓN ADAPTADA AL ASPECT RATIO REAL */}
         <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
           <p className="text-xs font-semibold text-slate-400">Previsualización en vivo (Proporción real):</p>
           <div 
@@ -415,7 +391,11 @@ export function ReportModal({ event, agency, onClose }: { event: Event; agency: 
   }, [event.id]);
 
   const precioEntrada = (event as any).price || 0;
-  const gananciaTotal = (report?.used_tickets || 0) * precioEntrada;
+  const usedTickets = report?.used_tickets || 0;
+  const validTickets = report?.valid_tickets || 0; // Creadas pero no validadas (pérdidas)
+  
+  const ingresosReales = usedTickets * precioEntrada;
+  const perdidasEstimadas = validTickets * precioEntrada;
 
   const handleDownloadPDF = async () => {
     if (!report) return;
@@ -437,15 +417,16 @@ export function ReportModal({ event, agency, onClose }: { event: Event; agency: 
     const rows: [string, string][] = [
       ['Precio por entrada', `S/. ${precioEntrada.toFixed(2)}`],
       ['Total de entradas generadas', String(report.total_tickets || 0)],
-      ['Personas que ingresaron', String(report.used_tickets || 0)],
-      ['Entradas sin usar', String(report.valid_tickets || 0)],
+      ['Asistentes validados (Ingresaron)', String(usedTickets)],
+      ['Entradas sin usar (Pérdidas)', String(validTickets)],
       ['Entradas canceladas', String(report.cancelled_tickets || 0)],
-      ['Ganancia Recaudada', `S/. ${gananciaTotal.toFixed(2)}`],
+      ['Ingresos Reales Recaudados', `S/. ${ingresosReales.toFixed(2)}`],
+      ['Pérdidas por entradas no usadas', `S/. ${perdidasEstimadas.toFixed(2)}`],
     ];
     for (const [label, val] of rows) {
-      pdf.text(label, 30, y); pdf.text(val, 180, y, { align: 'right' }); y += 11;
+      pdf.text(label, 30, y); pdf.text(val, 180, y, { align: 'right' }); y += 10;
     }
-    const pct = report.total_tickets > 0 ? Math.round((report.used_tickets / report.total_tickets) * 100) : 0;
+    const pct = report.total_tickets > 0 ? Math.round((usedTickets / report.total_tickets) * 100) : 0;
     pdf.text(`Porcentaje de asistencia`, 30, y); pdf.text(`${pct}%`, 180, y, { align: 'right' });
     pdf.setTextColor(34, 211, 238); pdf.setFontSize(12); pdf.text('V-PASS', 105, 280, { align: 'center' });
     pdf.save(`reporte-financiero-${event.name}.pdf`);
@@ -464,14 +445,17 @@ export function ReportModal({ event, agency, onClose }: { event: Event; agency: 
             {report.location && <p className="text-sm text-slate-400">{report.location}</p>}
           </div>
 
-          {/* Tarjeta de Resumen Financiero */}
-          <div className="p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-slate-300">Precio por entrada: <span className="text-white font-bold">S/. {precioEntrada.toFixed(2)}</span></p>
-              <p className="text-xs text-slate-300 mt-0.5">Ingresos recaudados (según asistentes):</p>
+          {/* Tarjetas de Resumen Financiero: Ingresos vs Pérdidas */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex flex-col justify-between">
+              <p className="text-xs text-slate-300 font-medium">Ingresos Reales</p>
+              <p className="text-2xl font-black text-emerald-400 mt-2">S/. {ingresosReales.toFixed(2)}</p>
+              <p className="text-[10px] text-slate-400 mt-1">{usedTickets} entradas validadas</p>
             </div>
-            <div className="text-right">
-              <span className="text-2xl font-black text-emerald-400">S/. {gananciaTotal.toFixed(2)}</span>
+            <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/30 flex flex-col justify-between">
+              <p className="text-xs text-slate-300 font-medium">Pérdidas (No usadas)</p>
+              <p className="text-2xl font-black text-red-400 mt-2">S/. {perdidasEstimadas.toFixed(2)}</p>
+              <p className="text-[10px] text-slate-400 mt-1">{validTickets} entradas sin usar</p>
             </div>
           </div>
 
@@ -484,12 +468,12 @@ export function ReportModal({ event, agency, onClose }: { event: Event; agency: 
           <div className="card p-4">
             <div className="flex justify-between text-sm mb-2">
               <span className="text-slate-300">Porcentaje de asistencia</span>
-              <span className="text-white font-bold">{report.total_tickets > 0 ? Math.round((report.used_tickets / report.total_tickets) * 100) : 0}%</span>
+              <span className="text-white font-bold">{report.total_tickets > 0 ? Math.round((usedTickets / report.total_tickets) * 100) : 0}%</span>
             </div>
             <div className="h-3 bg-slate-800 rounded-full overflow-hidden">
               <div 
                 className="h-full bg-gradient-to-r from-cyan-400 to-green-400 rounded-full transition-all duration-500" 
-                style={{ width: `${report.total_tickets > 0 ? Math.min(100, Math.round((report.used_tickets / report.total_tickets) * 100)) : 0}%` }}
+                style={{ width: `${report.total_tickets > 0 ? Math.min(100, Math.round((usedTickets / report.total_tickets) * 100)) : 0}%` }}
               />
             </div>
           </div>
