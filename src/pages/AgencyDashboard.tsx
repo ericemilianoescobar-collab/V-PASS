@@ -92,12 +92,10 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
     const { data } = await supabase.from('tickets').select('*').eq('event_id', eventId).order('created_at', { ascending: false });
     const allTickets = (data as Ticket[]) || [];
     
-    // Identificamos las de soporte mediante un marcador invisible al inicio del nombre o teléfono interno, ej: un espacio invisible o separador limpio
     const normalTickets = allTickets.filter(t => !t.attendee_name?.startsWith('__SUP__'));
     const cortesiasTickets = allTickets.filter(t => t.attendee_name?.startsWith('__SUP__'));
 
     setTickets(normalTickets);
-    // Limpiamos el marcador interno para que el usuario de soporte vea el nombre limpio sin etiquetas
     setSupportTickets(cortesiasTickets.map(t => ({ ...t, attendee_name: t.attendee_name.replace('__SUP__', '') })));
   };
 
@@ -144,7 +142,6 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
     }
   };
 
-  // Creación de Cortesía Exclusiva (Guarda con prefijo interno __SUP__ pero se muestra limpio)
   const handleCreateSupportTicket = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeEvent || !masterGuestName.trim()) return;
@@ -433,7 +430,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
             </div>
           )}
 
-          {/* GUESTS TAB (ESTRICTAMENTE LIMPIO DE REGISTROS DE SOPORTE) */}
+          {/* GUESTS TAB */}
           {tab === 'guests' && (
             <div className="space-y-4 animate-fade-in">
               <div className="flex items-center justify-between">
@@ -475,6 +472,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                       `📍 *Lugar:* ${eventLocation}\n\n` +
                       `🔗 *Ver tu entrada:* ${ticketUrl}\n\n` +
                       `Presenta este pase en el ingreso.\n\n` +
+                      `💡 *Recomendación:* Tómale una captura de pantalla al código QR por si acaso no cuentes con internet al momento de ingresar.\n\n` +
                       `⚠️ *Importante:* No compartas este enlace ni tu entrada con nadie.`;
 
                     const waMessage = encodeURIComponent(textMsg);
@@ -651,7 +649,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                   {!activeEvent && <p className="text-[11px] text-yellow-400 text-center">Debe haber un evento activo en la agencia.</p>}
                 </form>
 
-                {/* Listado Privado Independiente (Nombres limpios sin corchetes) */}
+                {/* Listado Privado Independiente */}
                 <div className="space-y-2 max-h-48 overflow-y-auto">
                   <p className="text-xs font-semibold text-slate-400">Listado de registros:</p>
                   {supportTickets.length === 0 ? (
@@ -660,8 +658,18 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                     supportTickets.map(st => {
                       const ticketUrl = `${window.location.origin}/#ticket/${st.code}`;
                       const phone = (st as any).guest_phone || '';
+                      const eventLocation = activeEvent?.location || 'Por confirmar';
+                      const eventDateStr = `${activeEvent?.event_date || ''} ${activeEvent?.event_time ? `- ${activeEvent.event_time}${activeEvent.am_pm || ''}` : ''}`;
+
                       const textMsg = `Hola *${st.attendee_name}*, aquí tienes tu pase para *${activeEvent?.name || 'el evento'}*.\n\n` +
-                        `🎟️ *Código:* ${st.code}\n🔗 *Ver entrada:* ${ticketUrl}`;
+                        `🎟️ *Código de entrada:* ${st.code}\n` +
+                        `📅 *Fecha:* ${eventDateStr}\n` +
+                        `📍 *Lugar:* ${eventLocation}\n\n` +
+                        `🔗 *Ver tu entrada:* ${ticketUrl}\n\n` +
+                        `Presenta este pase en el ingreso.\n\n` +
+                        `💡 *Recomendación:* Tómale una captura de pantalla al código QR por si acaso no cuentes con internet al momento de ingresar.\n\n` +
+                        `⚠️ *Importante:* No compartas este enlace ni tu entrada con nadie.`;
+
                       const waLink = `https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(textMsg)}`;
 
                       return (
