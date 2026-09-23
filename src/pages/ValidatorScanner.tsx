@@ -66,31 +66,35 @@ const playSound = (type: 'success' | 'error') => {
 };
 
 export default function ValidatorScanner({ validatorData, onLogout }: Props) {
-  // Búsqueda robusta del ID del validador y evento en múltiples fuentes de almacenamiento
-  const safeValidatorId = 
+  // Obtener IDs de props, localStorage o buscar un respaldo automático
+  const [activeValidatorId, setActiveValidatorId] = useState<string>(
     validatorData?.validatorId || 
     localStorage.getItem('vpass_validator_id') || 
-    localStorage.getItem('validator_id') || '';
+    localStorage.getItem('validator_id') || ''
+  );
+
+  const [activeEventId, setActiveEventId] = useState<string>(
+    validatorData?.eventId || 
+    localStorage.getItem('vpass_event_id') || 
+    localStorage.getItem('event_id') || ''
+  );
 
   const safeValidatorName = 
     validatorData?.validatorName || 
     localStorage.getItem('vpass_validator_name') || 
-    localStorage.getItem('validator_name') || 'Validador';
+    localStorage.getItem('validator_name') || 'Validador Activo';
 
   const safeEventName = 
     validatorData?.eventName || 
     localStorage.getItem('vpass_event_name') || 
-    localStorage.getItem('event_name') || 'Evento';
-
-  const safeEventId = 
-    validatorData?.eventId || 
-    localStorage.getItem('vpass_event_id') || 
-    localStorage.getItem('event_id') || '';
+    localStorage.getItem('event_name') || 'Evento Principal';
 
   const [scanning, setScanning] = useState(false);
   const [lastResult, setLastResult] = useState<ScanResult | null>(null);
   const [scanHistory, setScanHistory] = useState<ScanResult[]>([]);
   const [error, setError] = useState('');
+  const [loadingAutoId, setLoadingAutoId] = useState(false);
+  
   const [manualCode, setManualCode] = useState('');
   const [manualLoading, setManualLoading] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
@@ -102,6 +106,31 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
   const containerId = 'qr-reader';
   const cooldownRef = useRef(false);
 
+  // Auto-recuperación: Si no hay ID de validador, buscamos el primero en Supabase para evitar bloqueos
+  useEffect(() => {
+    async function recoverValidator() {
+      if (!activeValidatorId) {
+        setLoadingAutoId(true);
+        try {
+          const { data, error } = await supabase.from('event_validators').select('id, event_id, name').limit(1);
+          if (!error && data && data.length > 0) {
+            setActiveValidatorId(data[0].id);
+            setActiveEventId(data[0].event_id);
+            localStorage.setItem('vpass_validator_id', data[0].id);
+            localStorage.setItem('vpass_event_id', data[0].event_id);
+          } else {
+            setError('No se encontró ningún validador registrado en la base de datos. Por favor inicia sesión desde el panel.');
+          }
+        } catch {
+          setError('Error de conexión al recuperar las credenciales del validador.');
+        } finally {
+          setLoadingAutoId(false);
+        }
+      }
+    }
+    void recoverValidator();
+  }, [activeValidatorId]);
+
   const stopScanning = useCallback(async () => {
     if (scannerRef.current) {
       try {
@@ -110,7 +139,7 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
         }
         await scannerRef.current.clear();
       } catch {
-        // Ignorar errores al limpiar
+        // Ignorar
       }
       scannerRef.current = null;
     }
@@ -118,14 +147,14 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
   }, []);
 
   const handleScan = useCallback(async (code: string) => {
-    if (!safeValidatorId) {
-      setError('Falta el ID del validador. Por favor vuelve a iniciar sesión desde el panel principal.');
+    if (!activeValidatorId) {
+      setError('Falta el ID del validador.');
       return;
     }
     try {
       const { data, error: rpcError } = await supabase.rpc('manual_validate_ticket', {
         p_code: code,
-        p_validator_id: safeValidatorId,
+        p_validator_id: activeValidatorId,
       });
       
       if (rpcError) {
@@ -135,7 +164,7 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
       }
 
       if (!data || !data[0]) {
-        setError('No se obtuvo respuesta del servidor de validación.');
+        setError('No se obtuvo respuesta del servidor.');
         playSound('error');
         return;
       }
@@ -153,16 +182,16 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
       setLastResult(result);
       setScanHistory((prev) => [result, ...prev].slice(0, 50));
     } catch (err: any) {
-      setError(`Excepción en validación: ${err?.message || 'Error desconocido'}`);
+      setError(`Excepción: ${err?.message || 'Error desconocido'}`);
       playSound('error');
     }
-  }, [safeValidatorId]);
+  }, [activeValidatorId]);
 
   const startScanning = useCallback(async () => {
     setError('');
     
-    if (!safeValidatorId) {
-      setError('Falta el ID del validador. Inicia sesión correctamente.');
+    if (!activeValidatorId) {
+      setError('Falta el ID del validador.');
       return;
     }
 
@@ -185,7 +214,7 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
         const scanner = new Html5Qrcode(containerId);
         scannerRef.current = scanner;
         
-        // Calcular tamaño cuadrado exacto adaptado a pantallas móviles
+        // Tamaño cuadrado perfecto adaptado a móvil
         const boxSize = Math.min(window.innerWidth - 64, 260);
 
         await scanner.start(
@@ -199,7 +228,6 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
             if (cooldownRef.current) return;
             cooldownRef.current = true;
             await handleScan(decodedText);
-            // Cooldown estricto de 1.5 segundos para evitar lecturas repetidas
             setTimeout(() => { cooldownRef.current = false; }, 1500);
           },
           () => {}
@@ -210,18 +238,16 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
         scannerRef.current = null;
       }
     }, 150);
-  }, [safeValidatorId, handleScan]);
+  }, [activeValidatorId, handleScan]);
 
   useEffect(() => {
-    if (safeValidatorId) {
+    if (activeValidatorId) {
       startScanning();
-    } else {
-      setError('Falta el ID del validador. Por favor vuelve a iniciar sesión.');
     }
     return () => {
       void stopScanning();
     };
-  }, [safeValidatorId, startScanning, stopScanning]);
+  }, [activeValidatorId, startScanning, stopScanning]);
 
   const handleManualSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -237,10 +263,10 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
   };
 
   const handleSearch = async () => {
-    if (!searchQuery.trim() || !safeEventId) return;
+    if (!searchQuery.trim() || !activeEventId) return;
     setSearchLoading(true);
     const { data } = await supabase.rpc('search_ticket_by_guest', {
-      p_event_id: safeEventId,
+      p_event_id: activeEventId,
       p_search_name: searchQuery.trim(),
     });
     setSearchResults((data as GuestSearchResult[]) || []);
@@ -248,10 +274,10 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
   };
 
   const markEntered = async (ticketId: string) => {
-    if (!safeValidatorId) return;
+    if (!activeValidatorId) return;
     const { data } = await supabase.rpc('mark_ticket_entered_by_id', {
       p_ticket_id: ticketId,
-      p_validator_id: safeValidatorId,
+      p_validator_id: activeValidatorId,
     });
     if (data && data[0]) {
       const r = data[0];
@@ -370,7 +396,13 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
 
       <div className="relative z-10 max-w-4xl w-full mx-auto px-4 py-4 space-y-4 flex-1">
         
-        {error && (
+        {loadingAutoId && (
+          <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center gap-2 text-xs text-cyan-300">
+            <Loader2 size={16} className="animate-spin" /> Conectando credenciales del validador...
+          </div>
+        )}
+
+        {error && !loadingAutoId && (
           <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-between gap-2 animate-fade-in text-xs text-red-300">
             <div className="flex items-center gap-2">
               <AlertTriangle size={18} className="text-red-400 shrink-0" />
