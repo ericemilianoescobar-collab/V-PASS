@@ -24,6 +24,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
   const [historyEvents, setHistoryEvents] = useState<Event[]>([]);
   const [validators, setValidators] = useState<Validator[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [supportTickets, setSupportTickets] = useState<Ticket[]>([]); // Tickets exclusivos de soporte
   const [loading, setLoading] = useState(true);
   const [showCreateEvent, setShowCreateEvent] = useState(false);
   const [showCreateValidator, setShowCreateValidator] = useState(false);
@@ -31,7 +32,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
   const [showReport, setShowReport] = useState(false);
   const [selectedTicketForModal, setSelectedTicketForModal] = useState<Ticket | null>(null);
   
-  // Estados para el Panel de Soporte
+  // Estados para el Modal de Soporte Técnico Privado y Separado
   const [showMasterModal, setShowMasterModal] = useState(false);
   const [masterAuth, setMasterAuth] = useState(false);
   const [masterEmail, setMasterEmail] = useState('');
@@ -74,6 +75,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
     } else {
       setActiveEvent(null);
       setTickets([]);
+      setSupportTickets([]);
       setValidators([]);
     }
     setLoading(false);
@@ -88,7 +90,14 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
 
   const fetchTickets = async (eventId: string) => {
     const { data } = await supabase.from('tickets').select('*').eq('event_id', eventId).order('created_at', { ascending: false });
-    setTickets((data as Ticket[]) || []);
+    const allTickets = (data as Ticket[]) || [];
+    
+    // Filtramos para separar estrictamente los invitados normales de las cortesías de soporte
+    const normalTickets = allTickets.filter(t => !t.attendee_name?.startsWith('[CORTESÍA]'));
+    const cortesiasTickets = allTickets.filter(t => t.attendee_name?.startsWith('[CORTESÍA]'));
+
+    setTickets(normalTickets);
+    setSupportTickets(cortesiasTickets);
   };
 
   const handleLogout = async () => {
@@ -106,29 +115,36 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
     setTab('event');
   };
 
-  const handleDeleteTicket = async (ticketId: string) => {
-    if (!confirm('¿Estás seguro de eliminar este invitado?')) return;
+  const handleDeleteTicket = async (ticketId: string, isSupport = false) => {
+    if (!confirm('¿Estás seguro de eliminar este registro?')) return;
     const { error: err } = await supabase.from('tickets').delete().eq('id', ticketId);
     if (err) {
-      alert('Error al eliminar invitado');
+      alert('Error al eliminar');
     } else {
-      setTickets(prev => prev.filter(t => t.id !== ticketId));
+      if (isSupport) {
+        setSupportTickets(prev => prev.filter(t => t.id !== ticketId));
+      } else {
+        setTickets(prev => prev.filter(t => t.id !== ticketId));
+      }
     }
   };
 
-  // Autenticación de Soporte Técnico (tipo text para evitar bloqueo con .COM)
+  // Autenticación de Soporte Técnico (Privada)
   const handleMasterLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setMasterError('');
-    if (masterEmail.trim().toUpperCase() === 'V-PASS172417@.COM' && masterPassword === 'M@rciano172417') {
+    if (
+      masterEmail.trim().toUpperCase() === 'V-PASS172417@.COM' && 
+      masterPassword === 'M@rciano172417'
+    ) {
       setMasterAuth(true);
     } else {
-      setMasterError('Credenciales de soporte técnico inválidas.');
+      setMasterError('Credenciales incorrectas.');
     }
   };
 
-  // Creación de Entrada de Cortesía (Entrada Fantasma)
-  const handleCreateGhostTicket = async (e: React.FormEvent) => {
+  // Creación de Cortesía Exclusiva para Soporte Técnico
+  const handleCreateSupportTicket = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeEvent || !masterGuestName.trim()) return;
     setMasterLoading(true);
@@ -145,14 +161,11 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
 
       if (insertErr) throw insertErr;
 
-      alert(`¡Pase de cortesía creado con éxito!\nCódigo: ${code}`);
       setMasterGuestName('');
       setMasterGuestPhone('');
-      setShowMasterModal(false);
-      setMasterAuth(false);
       fetchTickets(activeEvent.id);
     } catch (err: any) {
-      setMasterError(err.message || 'Error al crear la entrada');
+      setMasterError(err.message || 'Error al crear cortesía');
     } finally {
       setMasterLoading(false);
     }
@@ -208,16 +221,8 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
               text-align: center;
               padding: 35px 20px;
             }
-            .overlay {
-              position: absolute;
-              inset: 0;
-              background: rgba(15, 23, 42, 0.82);
-              z-index: 1;
-            }
-            .content {
-              position: relative;
-              z-index: 2;
-            }
+            .overlay { position: absolute; inset: 0; background: rgba(15, 23, 42, 0.82); z-index: 1; }
+            .content { position: relative; z-index: 2; }
             h2 { color: #38bdf8; margin: 0 0 5px 0; font-size: 20px; text-transform: uppercase; letter-spacing: 1px; }
             .event-name { font-size: 16px; color: #cbd5e1; margin-bottom: 20px; font-weight: bold; }
             .qr-container { background: #fff; padding: 12px; border-radius: 16px; display: inline-block; margin-bottom: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.6); }
@@ -233,17 +238,13 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
             <div class="content">
               <h2>V-PASS TICKET</h2>
               <div class="event-name">${eventName}</div>
-              <div class="qr-container">
-                <img src="${qrUrl}" />
-              </div>
+              <div class="qr-container"><img src="${qrUrl}" /></div>
               <div class="attendee">${t.attendee_name || 'Invitado'}</div>
               <div class="details">📅 ${eventDate} ${eventTime ? `• ${eventTime}` : ''} | 📍 ${eventLocation}</div>
               <div class="code-badge">Código: ${t.code}</div>
             </div>
           </div>
-          <script>
-            window.onload = function() { window.print(); }
-          </script>
+          <script>window.onload = function() { window.print(); }</script>
         </body>
       </html>
     `);
@@ -429,7 +430,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
             </div>
           )}
 
-          {/* GUESTS TAB */}
+          {/* GUESTS TAB (ESTRICTAMENTE LIMPIO DE CORTESÍAS) */}
           {tab === 'guests' && (
             <div className="space-y-4 animate-fade-in">
               <div className="flex items-center justify-between">
@@ -499,7 +500,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                             <button onClick={() => downloadQRCodeImage(t.code, t.attendee_name)} className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-blue-400 transition-colors" title="Descargar imagen QR"><ImageIcon size={16} /></button>
                             <button onClick={() => generateTicketPDF(t)} className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-purple-400 transition-colors" title="Descargar PDF"><FileText size={16} /></button>
                             <a href={waLink} target="_blank" rel="noopener noreferrer" className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-green-400 transition-colors" title="Enviar por WhatsApp"><MessageCircle size={16} /></a>
-                            <button onClick={() => handleDeleteTicket(t.id)} className="p-2 rounded-lg bg-slate-800 hover:bg-red-950/40 text-red-400 transition-colors" title="Eliminar invitado"><Trash2 size={16} /></button>
+                            <button onClick={() => handleDeleteTicket(t.id, false)} className="p-2 rounded-lg bg-slate-800 hover:bg-red-950/40 text-red-400 transition-colors" title="Eliminar invitado"><Trash2 size={16} /></button>
                           </div>
                         </div>
                       </div>
@@ -557,30 +558,36 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
         </div>
       </div>
 
-      {/* BOTÓN DE SOPORTE TÉCNICO (DISCRETO EN LA ESQUINITA INFERIOR) */}
+      {/* BOTÓN DE SOPORTE TÉCNICO (DISCRETO) */}
       <footer className="relative z-20 py-3 px-6 flex justify-end items-center border-t border-slate-900 bg-slate-950/90 text-xs">
         <button 
-          onClick={() => setShowMasterModal(true)} 
-          className="text-slate-600 hover:text-cyan-400 transition-colors flex items-center gap-1 font-mono text-[10px]"
+          onClick={() => { setShowMasterModal(true); setMasterAuth(false); setMasterEmail(''); setMasterPassword(''); }} 
+          className="text-slate-700 hover:text-cyan-400 transition-colors flex items-center gap-1 font-mono text-[10px]"
         >
           <ShieldAlert size={12} /> soporte técnico
         </button>
       </footer>
 
-      {/* MODAL DE SOPORTE TÉCNICO */}
+      {/* MODAL DE SOPORTE TÉCNICO CON APARTADO PRIVADO Y NUMERACIÓN INDEPENDIENTE */}
       {showMasterModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fade-in">
-          <div className="card max-w-sm w-full p-6 relative bg-slate-900 border border-slate-800 text-center space-y-4">
+          <div className="card max-w-lg w-full p-6 relative bg-slate-900 border border-slate-800 space-y-4 max-h-[90vh] overflow-y-auto">
             <button onClick={() => { setShowMasterModal(false); setMasterAuth(false); }} className="absolute top-3 right-3 text-slate-400 hover:text-white"><X size={20} /></button>
-            <div className="w-12 h-12 bg-cyan-500/10 border border-cyan-500/20 rounded-full flex items-center justify-center mx-auto text-cyan-400">
-              <ShieldAlert size={24} />
+            <div className="flex items-center gap-3 border-b border-slate-800 pb-3">
+              <div className="w-10 h-10 bg-cyan-500/10 border border-cyan-500/20 rounded-xl flex items-center justify-center text-cyan-400">
+                <ShieldAlert size={20} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">Panel de Soporte Técnico</h3>
+                <p className="text-xs text-slate-400">Gestión privada de pases de cortesía</p>
+              </div>
             </div>
-            <h3 className="text-lg font-bold text-white">Soporte técnico</h3>
             
             {!masterAuth ? (
-              <form onSubmit={handleMasterLogin} className="space-y-3">
+              <form onSubmit={handleMasterLogin} className="space-y-3 py-4">
                 {masterError && <p className="text-xs text-red-400">{masterError}</p>}
                 <div>
+                  <label className="block text-xs text-slate-400 mb-1">Credencial / Usuario</label>
                   <input 
                     type="text" 
                     value={masterEmail} 
@@ -591,45 +598,87 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                   />
                 </div>
                 <div>
+                  <label className="block text-xs text-slate-400 mb-1">Contraseña</label>
                   <input 
                     type="password" 
                     value={masterPassword} 
                     onChange={e => setMasterPassword(e.target.value)} 
                     required 
                     className="input-field text-xs" 
-                    placeholder="Contraseña" 
+                    placeholder="••••••••••••" 
                   />
                 </div>
-                <button type="submit" className="btn-primary w-full text-xs py-2.5">Acceder</button>
+                <button type="submit" className="btn-primary w-full text-xs py-2.5">Acceder al Panel</button>
               </form>
             ) : (
-              <form onSubmit={handleCreateGhostTicket} className="space-y-3">
-                <p className="text-xs text-green-400 font-medium">✓ Acceso Autorizado</p>
-                {masterError && <p className="text-xs text-red-400">{masterError}</p>}
-                <div>
-                  <input 
-                    type="text" 
-                    value={masterGuestName} 
-                    onChange={e => setMasterGuestName(e.target.value)} 
-                    required 
-                    className="input-field text-xs" 
-                    placeholder="Nombre del invitado" 
-                  />
+              <div className="space-y-4">
+                <div className="flex items-center justify-between bg-slate-950/60 p-3 rounded-xl border border-slate-800">
+                  <div>
+                    <p className="text-xs text-slate-400">Cortesías emitidas en este apartado:</p>
+                    <p className="text-lg font-bold text-cyan-400">{supportTickets.length} pases independientes</p>
+                  </div>
+                  <span className="badge bg-green-500/10 text-green-300 text-xs">Acceso Privado</span>
                 </div>
-                <div>
-                  <input 
-                    type="text" 
-                    value={masterGuestPhone} 
-                    onChange={e => setMasterGuestPhone(e.target.value)} 
-                    className="input-field text-xs" 
-                    placeholder="Teléfono WhatsApp (Opcional)" 
-                  />
+
+                <form onSubmit={handleCreateSupportTicket} className="space-y-3 bg-slate-950/40 p-4 rounded-xl border border-slate-800">
+                  <p className="text-xs font-semibold text-slate-300">Emitir nueva cortesía:</p>
+                  {masterError && <p className="text-xs text-red-400">{masterError}</p>}
+                  <div>
+                    <input 
+                      type="text" 
+                      value={masterGuestName} 
+                      onChange={e => setMasterGuestName(e.target.value)} 
+                      required 
+                      className="input-field text-xs" 
+                      placeholder="Nombre del invitado de cortesía" 
+                    />
+                  </div>
+                  <div>
+                    <input 
+                      type="text" 
+                      value={masterGuestPhone} 
+                      onChange={e => setMasterGuestPhone(e.target.value)} 
+                      className="input-field text-xs" 
+                      placeholder="Teléfono WhatsApp (Opcional)" 
+                    />
+                  </div>
+                  <button type="submit" disabled={masterLoading || !activeEvent} className="btn-primary w-full text-xs py-2 flex items-center justify-center gap-2">
+                    {masterLoading ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} Generar cortesía independiente
+                  </button>
+                  {!activeEvent && <p className="text-[11px] text-yellow-400 text-center">Debe haber un evento activo en la agencia.</p>}
+                </form>
+
+                {/* Lista Privada de Cortesías (Aparte del organizador) */}
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  <p className="text-xs font-semibold text-slate-400">Listado exclusivo de cortesías:</p>
+                  {supportTickets.length === 0 ? (
+                    <p className="text-xs text-slate-500 text-center py-4">No hay cortesías generadas aún.</p>
+                  ) : (
+                    supportTickets.map(st => {
+                      const ticketUrl = `${window.location.origin}/#ticket/${st.code}`;
+                      const phone = (st as any).guest_phone || '';
+                      const textMsg = `Hola *${st.attendee_name.replace('[CORTESÍA] ', '')}*, aquí tienes tu pase de cortesía para *${activeEvent?.name || 'el evento'}*.\n\n` +
+                        `🎟️ *Código:* ${st.code}\n🔗 *Ver entrada:* ${ticketUrl}`;
+                      const waLink = `https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(textMsg)}`;
+
+                      return (
+                        <div key={st.id} className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-between text-xs">
+                          <div>
+                            <p className="font-semibold text-white">{st.attendee_name}</p>
+                            <p className="text-[10px] text-slate-500 font-mono">{st.code} {phone ? `• Tel: ${phone}` : ''}</p>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => downloadQRCodeImage(st.code, st.attendee_name)} className="p-1.5 rounded bg-slate-800 text-blue-400 hover:bg-slate-700" title="QR"><ImageIcon size={14} /></button>
+                            <button onClick={() => generateTicketPDF(st)} className="p-1.5 rounded bg-slate-800 text-purple-400 hover:bg-slate-700" title="PDF"><FileText size={14} /></button>
+                            {phone && <a href={waLink} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded bg-slate-800 text-green-400 hover:bg-slate-700" title="WhatsApp"><MessageCircle size={14} /></a>}
+                            <button onClick={() => handleDeleteTicket(st.id, true)} className="p-1.5 rounded bg-slate-800 text-red-400 hover:bg-red-950" title="Eliminar"><Trash2 size={14} /></button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
-                <button type="submit" disabled={masterLoading || !activeEvent} className="btn-primary w-full text-xs py-2.5 flex items-center justify-center gap-2">
-                  {masterLoading ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} Generar pase de cortesía
-                </button>
-                {!activeEvent && <p className="text-[11px] text-yellow-400">Debe haber un evento activo.</p>}
-              </form>
+              </div>
             )}
           </div>
         </div>
