@@ -31,7 +31,7 @@ export default function LandingPage({ navigate }: Props) {
 
         {/* Desktop buttons */}
         <div className="hidden md:flex items-center gap-3">
-          <button onClick={() => navigate('validator')} className="btn-ghost flex items-center gap-2">
+          <button onClick={() => navigate('validator-login')} className="btn-ghost flex items-center gap-2">
             <QrCode size={18} />
             Validador
           </button>
@@ -53,7 +53,7 @@ export default function LandingPage({ navigate }: Props) {
       {/* Mobile menu */}
       {menuOpen && (
         <div className="md:hidden absolute top-full left-0 right-0 z-30 bg-slate-900/95 backdrop-blur-xl border-b border-slate-800 p-4 flex flex-col gap-3 animate-fade-in">
-          <button onClick={() => { navigate('validator'); setMenuOpen(false); }} className="btn-ghost flex items-center gap-2 text-left">
+          <button onClick={() => { navigate('validator-login'); setMenuOpen(false); }} className="btn-ghost flex items-center gap-2 text-left">
             <QrCode size={18} /> Validador
           </button>
           <button onClick={() => { navigate('login'); setMenuOpen(false); }} className="btn-secondary text-center">
