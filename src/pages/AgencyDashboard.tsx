@@ -31,12 +31,13 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
   const [showReport, setShowReport] = useState(false);
   const [selectedTicketForModal, setSelectedTicketForModal] = useState<Ticket | null>(null);
   
-  // Estados para el Panel Maestro / Soporte
+  // Estados para el Panel de Soporte
   const [showMasterModal, setShowMasterModal] = useState(false);
   const [masterAuth, setMasterAuth] = useState(false);
   const [masterEmail, setMasterEmail] = useState('');
   const [masterPassword, setMasterPassword] = useState('');
   const [masterGuestName, setMasterGuestName] = useState('');
+  const [masterGuestPhone, setMasterGuestPhone] = useState('');
   const [masterLoading, setMasterLoading] = useState(false);
   const [masterError, setMasterError] = useState('');
 
@@ -115,18 +116,18 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
     }
   };
 
-  // Autenticación del Soporte Maestro
+  // Autenticación de Soporte Técnico (tipo text para evitar bloqueo con .COM)
   const handleMasterLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setMasterError('');
     if (masterEmail.trim().toUpperCase() === 'V-PASS172417@.COM' && masterPassword === 'M@rciano172417') {
       setMasterAuth(true);
     } else {
-      setMasterError('Credenciales de Soporte Maestro inválidas.');
+      setMasterError('Credenciales de soporte técnico inválidas.');
     }
   };
 
-  // Creación de Entrada Fantasma Válida pero Oculta
+  // Creación de Entrada de Cortesía (Entrada Fantasma)
   const handleCreateGhostTicket = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeEvent || !masterGuestName.trim()) return;
@@ -138,19 +139,20 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
       const { error: insertErr } = await supabase.from('tickets').insert({
         event_id: activeEvent.id,
         code,
-        attendee_name: `[MASTER] ${masterGuestName.trim()}`,
-        guest_phone: '999999999',
+        attendee_name: `[CORTESÍA] ${masterGuestName.trim()}`,
+        guest_phone: masterGuestPhone.trim() || '',
       });
 
       if (insertErr) throw insertErr;
 
-      alert(`¡Entrada fantasma creada con éxito!\nCódigo: ${code}`);
+      alert(`¡Pase de cortesía creado con éxito!\nCódigo: ${code}`);
       setMasterGuestName('');
+      setMasterGuestPhone('');
       setShowMasterModal(false);
       setMasterAuth(false);
       fetchTickets(activeEvent.id);
     } catch (err: any) {
-      setMasterError(err.message || 'Error al crear entrada fantasma');
+      setMasterError(err.message || 'Error al crear la entrada');
     } finally {
       setMasterLoading(false);
     }
@@ -555,17 +557,17 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
         </div>
       </div>
 
-      {/* BOTÓN DE SOPORTE MAESTRO (DISCRETO EN LA ESQUINITA INFERIOR) */}
+      {/* BOTÓN DE SOPORTE TÉCNICO (DISCRETO EN LA ESQUINITA INFERIOR) */}
       <footer className="relative z-20 py-3 px-6 flex justify-end items-center border-t border-slate-900 bg-slate-950/90 text-xs">
         <button 
           onClick={() => setShowMasterModal(true)} 
           className="text-slate-600 hover:text-cyan-400 transition-colors flex items-center gap-1 font-mono text-[10px]"
         >
-          <ShieldAlert size={12} /> soporte dev
+          <ShieldAlert size={12} /> soporte técnico
         </button>
       </footer>
 
-      {/* MODAL DE SOPORTE MAESTRO ("EL PAPÁ DE TODOS") */}
+      {/* MODAL DE SOPORTE TÉCNICO */}
       {showMasterModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fade-in">
           <div className="card max-w-sm w-full p-6 relative bg-slate-900 border border-slate-800 text-center space-y-4">
@@ -573,114 +575,104 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
             <div className="w-12 h-12 bg-cyan-500/10 border border-cyan-500/20 rounded-full flex items-center justify-center mx-auto text-cyan-400">
               <ShieldAlert size={24} />
             </div>
-            <h3 className="text-lg font-bold text-white">Soporte Técnico Maestro</h3>
+            <h3 className="text-lg font-bold text-white">Soporte técnico</h3>
             
             {!masterAuth ? (
               <form onSubmit={handleMasterLogin} className="space-y-3">
                 {masterError && <p className="text-xs text-red-400">{masterError}</p>}
                 <div>
-                  <input type="email" value={masterEmail} onChange={e => setMasterEmail(e.target.value)} required placeholder="Correo maestro" className="input-field text-xs text-center" />
+                  <input 
+                    type="text" 
+                    value={masterEmail} 
+                    onChange={e => setMasterEmail(e.target.value)} 
+                    required 
+                    className="input-field text-xs uppercase" 
+                    placeholder="V-PASS172417@.COM" 
+                  />
                 </div>
                 <div>
-                  <input type="password" value={masterPassword} onChange={e => setMasterPassword(e.target.value)} required placeholder="Contraseña" className="input-field text-xs text-center" />
+                  <input 
+                    type="password" 
+                    value={masterPassword} 
+                    onChange={e => setMasterPassword(e.target.value)} 
+                    required 
+                    className="input-field text-xs" 
+                    placeholder="Contraseña" 
+                  />
                 </div>
-                <button type="submit" className="btn-primary w-full text-xs py-2.5">Acceder como Maestro</button>
+                <button type="submit" className="btn-primary w-full text-xs py-2.5">Acceder</button>
               </form>
             ) : (
               <form onSubmit={handleCreateGhostTicket} className="space-y-3">
-                <p className="text-xs text-green-400 font-medium">✓ Acceso Maestro Autorizado</p>
+                <p className="text-xs text-green-400 font-medium">✓ Acceso Autorizado</p>
                 {masterError && <p className="text-xs text-red-400">{masterError}</p>}
                 <div>
-                  <label className="block text-[11px] text-slate-400 mb-1 text-left">Nombre de invitado (Entrada Fantasma)</label>
-                  <input type="text" value={masterGuestName} onChange={e => setMasterGuestName(e.target.value)} required placeholder="Nombre invitado VIP" className="input-field text-xs" />
+                  <input 
+                    type="text" 
+                    value={masterGuestName} 
+                    onChange={e => setMasterGuestName(e.target.value)} 
+                    required 
+                    className="input-field text-xs" 
+                    placeholder="Nombre del invitado" 
+                  />
+                </div>
+                <div>
+                  <input 
+                    type="text" 
+                    value={masterGuestPhone} 
+                    onChange={e => setMasterGuestPhone(e.target.value)} 
+                    className="input-field text-xs" 
+                    placeholder="Teléfono WhatsApp (Opcional)" 
+                  />
                 </div>
                 <button type="submit" disabled={masterLoading || !activeEvent} className="btn-primary w-full text-xs py-2.5 flex items-center justify-center gap-2">
-                  {masterLoading ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} Generar Entrada Fantasma Válida
+                  {masterLoading ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} Generar pase de cortesía
                 </button>
-                {!activeEvent && <p className="text-[11px] text-yellow-400">El organizador debe tener un evento activo.</p>}
+                {!activeEvent && <p className="text-[11px] text-yellow-400">Debe haber un evento activo.</p>}
               </form>
             )}
           </div>
         </div>
       )}
 
-      {selectedTicketForModal && activeEvent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-          <div 
-            className="card max-w-sm w-full p-6 relative bg-slate-900 border border-slate-800 text-center space-y-4 bg-cover bg-center overflow-hidden shadow-2xl"
-            style={activeEvent.bg_image_url ? { backgroundImage: `url(${activeEvent.bg_image_url})` } : {}}
-          >
-            {activeEvent.bg_image_url && <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" />}
-            <div className="relative z-10">
-              <button onClick={() => setSelectedTicketForModal(null)} className="absolute top-1 right-1 text-slate-400 hover:text-white bg-slate-900/80 p-1.5 rounded-full">
-                <X size={18} />
-              </button>
-              <h3 className="text-lg font-bold text-white mb-1">Entrada Digital</h3>
-              <p className="text-xs text-cyan-400 font-semibold mb-3">{activeEvent.name}</p>
-              
-              {/* Contenedor del Ticket con Flyer Adaptativo Real y QR Superpuesto */}
-              <div className="relative rounded-2xl overflow-hidden border border-cyan-500/40 p-4 shadow-2xl bg-slate-950">
-                {activeEvent.bg_image_url && (
-                  <div className="absolute inset-0 z-0">
-                    <img src={activeEvent.bg_image_url} alt="Flyer" className="w-full h-full object-cover opacity-60 filter brightness-90" />
-                    <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-[2px]" />
-                  </div>
-                )}
-                <div className="relative z-10 space-y-3">
-                  <div className="p-2.5 bg-white rounded-xl inline-block mx-auto shadow-xl border border-white/20">
-                    <img 
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${selectedTicketForModal.code}`} 
-                      alt="QR Code" 
-                      className="w-32 h-32 mx-auto rounded"
-                    />
-                  </div>
-                  <div>
-                    <p className="text-lg font-bold text-white text-shadow">{selectedTicketForModal.attendee_name}</p>
-                    <p className="text-xs text-cyan-300 font-medium mt-0.5">📅 {activeEvent.event_date} {activeEvent.event_time ? `• ${activeEvent.event_time} ${activeEvent.am_pm || ''}` : ''}</p>
-                    <p className="text-xs text-slate-300 font-mono mt-1.5 bg-slate-950/80 py-1 px-2 rounded border border-cyan-500/30 inline-block">Código: {selectedTicketForModal.code}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex gap-2 pt-2">
-                <button 
-                  onClick={() => downloadQRCodeImage(selectedTicketForModal.code, selectedTicketForModal.attendee_name)}
-                  className="btn-secondary flex-1 text-xs flex items-center justify-center gap-1.5 py-2.5"
-                >
-                  <ImageIcon size={14} /> Imagen
-                </button>
-                <button 
-                  onClick={() => generateTicketPDF(selectedTicketForModal)}
-                  className="btn-primary flex-1 text-xs flex items-center justify-center gap-1.5 py-2.5"
-                >
-                  <FileText size={14} /> PDF
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
+      {/* Modales adicionales */}
       {showCreateEvent && <CreateEventModal agencyId={agency.id} onClose={() => setShowCreateEvent(false)} onCreated={handleEventCreated} />}
       {showCreateValidator && activeEvent && <CreateValidatorModal eventId={activeEvent.id} onClose={() => setShowCreateValidator(false)} onCreated={() => { setShowCreateValidator(false); fetchValidators(activeEvent.id); }} />}
       {showAddGuest && activeEvent && <AddGuestModal event={activeEvent} onClose={() => setShowAddGuest(false)} onAdded={() => fetchTickets(activeEvent.id)} />}
       {showReport && activeEvent && <ReportModal event={activeEvent} agency={agency} onClose={() => setShowReport(false)} />}
+      
+      {selectedTicketForModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setSelectedTicketForModal(null)}>
+          <div className="card max-w-xs w-full p-6 text-center space-y-4 bg-slate-900 border border-slate-800" onClick={e => e.stopPropagation()}>
+            <h4 className="font-bold text-white text-base">{selectedTicketForModal.attendee_name}</h4>
+            <div className="bg-white p-3 rounded-xl inline-block shadow-lg">
+              <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${selectedTicketForModal.code}`} alt="QR" className="w-40 h-40 mx-auto" />
+            </div>
+            <p className="font-mono text-xs text-cyan-400">{selectedTicketForModal.code}</p>
+            <button onClick={() => setSelectedTicketForModal(null)} className="btn-secondary w-full text-xs">Cerrar</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function StatCard({ icon: Icon, label, value, color }: { icon: any; label: string; value: string | number; color: string }) {
-  const colors: Record<string, string> = {
-    cyan: 'text-cyan-400 bg-cyan-400/15 border-cyan-400/30',
-    blue: 'text-blue-400 bg-blue-400/15 border-blue-400/30',
-    green: 'text-green-400 bg-green-400/15 border-green-400/30',
-    yellow: 'text-yellow-400 bg-yellow-400/15 border-yellow-400/30',
+function StatCard({ icon: Icon, label, value, color }: { icon: any; label: string; value: string | number; color: 'cyan' | 'blue' | 'green' | 'yellow' }) {
+  const colors = {
+    cyan: 'border-cyan-500/20 bg-cyan-500/5 text-cyan-400',
+    blue: 'border-blue-500/20 bg-blue-500/5 text-blue-400',
+    green: 'border-green-500/20 bg-green-500/5 text-green-400',
+    yellow: 'border-yellow-500/20 bg-yellow-500/5 text-yellow-400',
   };
   return (
-    <div className="card p-5">
-      <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 border ${colors[color]}`}><Icon size={20} /></div>
-      <p className="text-2xl font-black text-white">{value}</p>
-      <p className="text-sm text-slate-400">{label}</p>
+    <div className={`card p-5 border ${colors[color]} flex items-center gap-4`}>
+      <div className={`w-12 h-12 rounded-xl flex items-center justify-center bg-slate-900/80 shadow-inner`}>
+        <Icon size={24} />
+      </div>
+      <div>
+        <p className="text-xs text-slate-400 font-medium">{label}</p>
+        <p className="text-2xl font-extrabold text-white mt-1">{value}</p>
+      </div>
     </div>
   );
 }
