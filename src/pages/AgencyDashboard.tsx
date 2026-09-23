@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   LogOut, Calendar, MapPin, Users, QrCode, Ticket as TicketIcon,
   BarChart3, Loader2, AlertCircle, CheckCircle2, Clock, Plus,
-  UserPlus, ChevronRight, Lock, MessageCircle, X, FileText, Image as ImageIcon, Trash2, History, ShieldAlert, Key
+  UserPlus, ChevronRight, Lock, MessageCircle, X, Trash2, History, ShieldAlert
 } from 'lucide-react';
 import VPassLogo from '@/components/VPassLogo';
 import { supabase, type Agency, type Event, type Validator, type Ticket } from '@/lib/supabase';
@@ -174,87 +174,6 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
     }
   };
 
-  const downloadQRCodeImage = async (ticketCode: string, attendeeName: string) => {
-    try {
-      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${ticketCode}`;
-      const response = await fetch(qrUrl);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `Entrada-${attendeeName || 'invitado'}-${ticketCode}.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error("Error al descargar imagen QR:", err);
-      alert("No se pudo descargar la imagen.");
-    }
-  };
-
-  const generateTicketPDF = (t: Ticket) => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert("Por favor, permite las ventanas emergentes para generar el PDF.");
-      return;
-    }
-
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${t.code}`;
-    const eventName = activeEvent?.name || 'Evento V-PASS';
-    const eventDate = activeEvent?.event_date || '';
-    const eventTime = activeEvent?.event_time ? `${activeEvent.event_time} ${activeEvent.am_pm || ''}` : '';
-    const eventLocation = activeEvent?.location || 'Por confirmar';
-    const bgImage = activeEvent?.bg_image_url || '';
-    const displayName = t.attendee_name.replace('__SUP__', '');
-
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Entrada - ${displayName}</title>
-          <style>
-            body { font-family: Arial, sans-serif; background: #090d16; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-            .ticket-card {
-              position: relative;
-              width: 380px;
-              border-radius: 24px;
-              overflow: hidden;
-              border: 2px solid #38bdf8;
-              box-shadow: 0 20px 40px rgba(0,0,0,0.9);
-              background: ${bgImage ? `url(${bgImage}) center/cover no-repeat` : '#1e293b'};
-              text-align: center;
-              padding: 35px 20px;
-            }
-            .overlay { position: absolute; inset: 0; background: rgba(15, 23, 42, 0.82); z-index: 1; }
-            .content { position: relative; z-index: 2; }
-            h2 { color: #38bdf8; margin: 0 0 5px 0; font-size: 20px; text-transform: uppercase; letter-spacing: 1px; }
-            .event-name { font-size: 16px; color: #cbd5e1; margin-bottom: 20px; font-weight: bold; }
-            .qr-container { background: #fff; padding: 12px; border-radius: 16px; display: inline-block; margin-bottom: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.6); }
-            .qr-container img { width: 160px; height: 160px; display: block; }
-            .attendee { font-size: 22px; font-weight: bold; color: #fff; margin: 10px 0 5px 0; }
-            .details { font-size: 13px; color: #94a3b8; margin-bottom: 15px; }
-            .code-badge { font-family: monospace; background: #0f172a; border: 1px solid rgba(56, 189, 248, 0.4); padding: 8px 14px; border-radius: 8px; color: #38bdf8; font-size: 13px; display: inline-block; }
-          </style>
-        </head>
-        <body>
-          <div class="ticket-card">
-            ${bgImage ? '<div class="overlay"></div>' : ''}
-            <div class="content">
-              <h2>V-PASS TICKET</h2>
-              <div class="event-name">${eventName}</div>
-              <div class="qr-container"><img src="${qrUrl}" /></div>
-              <div class="attendee">${displayName}</div>
-              <div class="details">📅 ${eventDate} ${eventTime ? `• ${eventTime}` : ''} | 📍 ${eventLocation}</div>
-              <div class="code-badge">Código: ${t.code}</div>
-            </div>
-          </div>
-          <script>window.onload = function() { window.print(); }</script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-  };
-
   const canCreateEvent = agency.plan_active && !activeEvent;
 
   return (
@@ -273,6 +192,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
             <span className={`badge ${agency.plan_active ? 'bg-cyan-400/10 text-cyan-300 border border-cyan-400/20' : 'bg-slate-800 text-slate-500 border border-slate-700'}`}>
               {planInfo.name} ({agency.plan.toUpperCase()}) {agency.plan_active ? '✓ Activo' : 'Inactivo'}
             </span>
+
           </div>
           <button onClick={handleLogout} className="btn-ghost flex items-center gap-2 text-red-400 hover:text-red-300 text-sm">
             <LogOut size={16} /> <span className="hidden sm:inline">Cerrar sesión</span>
@@ -285,6 +205,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
           <span className={`badge ${agency.plan_active ? 'bg-cyan-400/10 text-cyan-300' : 'bg-slate-800 text-slate-500'} text-xs`}>
             {planInfo.name}
           </span>
+
         </div>
 
         <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 py-6">
@@ -465,7 +386,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
               ) : (
                 <div className="space-y-2 max-h-[60vh] overflow-y-auto">
                   {tickets.map(t => {
-                    const ticketUrl = `<${window.location.origin}/#ticket/${t.code}>`;
+                    const ticketUrl = `${window.location.origin}/#ticket/${t.code}`;
                     const guestPhone = (t as any).guest_phone || '';
                     const eventLocation = activeEvent?.location || 'Por confirmar';
                     const eventDateStr = `${activeEvent?.event_date || ''} ${activeEvent?.event_time ? `- ${activeEvent.event_time}${activeEvent.am_pm || ''}` : ''}`;
@@ -502,8 +423,6 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
 
                           <div className="flex items-center gap-1.5">
                             <button onClick={() => setSelectedTicketForModal(t)} className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 transition-colors" title="Ver Ticket y QR"><QrCode size={16} /></button>
-                            <button onClick={() => downloadQRCodeImage(t.code, t.attendee_name)} className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-blue-400 transition-colors" title="Descargar imagen QR"><ImageIcon size={16} /></button>
-                            <button onClick={() => generateTicketPDF(t)} className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-purple-400 transition-colors" title="Descargar PDF"><FileText size={16} /></button>
                             <a href={waLink} target="_blank" rel="noopener noreferrer" className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-green-400 transition-colors" title="Enviar por WhatsApp"><MessageCircle size={16} /></a>
                             <button onClick={() => handleDeleteTicket(t.id, false)} className="p-2 rounded-lg bg-slate-800 hover:bg-red-950/40 text-red-400 transition-colors" title="Eliminar invitado"><Trash2 size={16} /></button>
                           </div>
@@ -516,7 +435,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
             </div>
           )}
 
-          {/* VALIDATORS TAB (LEE DIRECTAMENTE LOS DATOS INGRESADOS EN SUPABASE) */}
+          {/* VALIDATORS TAB */}
           {tab === 'validators' && (
             <div className="space-y-4 animate-fade-in">
               <div>
@@ -686,7 +605,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                     <p className="text-xs text-slate-500 text-center py-4">No hay registros generados aún.</p>
                   ) : (
                     supportTickets.map(st => {
-                      const ticketUrl = `<${window.location.origin}/#ticket/${st.code}>`;
+                      const ticketUrl = `${window.location.origin}/#ticket/${st.code}`;
                       const phone = (st as any).guest_phone || '';
                       const eventLocation = activeEvent?.location || 'Por confirmar';
                       const eventDateStr = `${activeEvent?.event_date || ''} ${activeEvent?.event_time ? `- ${activeEvent.event_time}${activeEvent.am_pm || ''}` : ''}`;
@@ -709,8 +628,6 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                             <p className="text-[10px] text-slate-500 font-mono">{st.code} {phone ? `• Tel: ${phone}` : ''}</p>
                           </div>
                           <div className="flex items-center gap-1">
-                            <button onClick={() => downloadQRCodeImage(st.code, st.attendee_name)} className="p-1.5 rounded bg-slate-800 text-blue-400 hover:bg-slate-700" title="QR"><ImageIcon size={14} /></button>
-                            <button onClick={() => generateTicketPDF(st)} className="p-1.5 rounded bg-slate-800 text-purple-400 hover:bg-slate-700" title="PDF"><FileText size={14} /></button>
                             {phone && <a href={waLink} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded bg-slate-800 text-green-400 hover:bg-slate-700" title="WhatsApp"><MessageCircle size={14} /></a>}
                             <button onClick={() => handleDeleteTicket(st.id, true)} className="p-1.5 rounded bg-slate-800 text-red-400 hover:bg-red-950" title="Eliminar"><Trash2 size={14} /></button>
                           </div>
