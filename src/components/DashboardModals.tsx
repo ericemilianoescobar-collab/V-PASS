@@ -34,7 +34,6 @@ export function CreateEventModal({ agencyId, onClose, onCreated }: { agencyId: s
   const [qrPosY, setQrPosY] = useState(50);
   const [qrSize, setQrSize] = useState(30);
   
-  // Único campo financiero necesario
   const [precioEntrada, setPrecioEntrada] = useState('');
 
   const [loading, setLoading] = useState(false);
@@ -89,7 +88,7 @@ export function CreateEventModal({ agencyId, onClose, onCreated }: { agencyId: s
     setLoading(true);
     setError('');
 
-    const { data, error: insertError } = await supabase.from('events').insert({
+    const eventPayload = {
       agency_id: agencyId,
       name,
       event_date: date,
@@ -100,16 +99,22 @@ export function CreateEventModal({ agencyId, onClose, onCreated }: { agencyId: s
       qr_pos_x: qrPosX,
       qr_pos_y: qrPosY,
       qr_size: qrSize,
-      price: parseFloat(precioEntrada) || 0,
-      estimated_tickets: 0,
       locked: true,
-    }).select().single();
+    };
+
+    const { data, error: insertError } = await supabase.from('events').insert(eventPayload).select().single();
 
     if (insertError) {
       setError(insertError.message);
       setLoading(false);
       return;
     }
+
+    // Guardar el precio localmente para reportes financieros sin alterar esquemas de Supabase
+    if (precioEntrada && data) {
+      localStorage.setItem(`event_price_${data.id}`, precioEntrada);
+    }
+
     onCreated(data as Event);
   };
 
@@ -142,7 +147,7 @@ export function CreateEventModal({ agencyId, onClose, onCreated }: { agencyId: s
           <input value={location} onChange={e => setLocation(e.target.value)} className="input-field" placeholder="Lugar del evento" />
         </div>
 
-        {/* CONTROL FINANCIERO: SOLO PRECIO DE ENTRADA */}
+        {/* CONTROL FINANCIERO */}
         <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
           <div className="flex items-center gap-2">
             <DollarSign size={16} className="text-cyan-400" />
@@ -180,7 +185,7 @@ export function CreateEventModal({ agencyId, onClose, onCreated }: { agencyId: s
           />
         </div>
 
-        {/* PREVISUALIZACIÓN ADAPTADA AL ASPECT RATIO REAL */}
+        {/* PREVISUALIZACIÓN ADAPTADA */}
         <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
           <p className="text-xs font-semibold text-slate-400">Previsualización en vivo (Proporción real):</p>
           <div 
@@ -390,9 +395,12 @@ export function ReportModal({ event, agency, onClose }: { event: Event; agency: 
     })();
   }, [event.id]);
 
-  const precioEntrada = (event as any).price || 0;
+  // Obtenemos el precio guardado localmente o de la BD si existe
+  const savedPriceStr = localStorage.getItem(`event_price_${event.id}`);
+  const precioEntrada = savedPriceStr ? parseFloat(savedPriceStr) : ((event as any).price || 0);
+
   const usedTickets = report?.used_tickets || 0;
-  const validTickets = report?.valid_tickets || 0; // Creadas pero no validadas (pérdidas)
+  const validTickets = report?.valid_tickets || 0; // Pérdidas
   
   const ingresosReales = usedTickets * precioEntrada;
   const perdidasEstimadas = validTickets * precioEntrada;
@@ -445,7 +453,6 @@ export function ReportModal({ event, agency, onClose }: { event: Event; agency: 
             {report.location && <p className="text-sm text-slate-400">{report.location}</p>}
           </div>
 
-          {/* Tarjetas de Resumen Financiero: Ingresos vs Pérdidas */}
           <div className="grid grid-cols-2 gap-3">
             <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex flex-col justify-between">
               <p className="text-xs text-slate-300 font-medium">Ingresos Reales</p>
