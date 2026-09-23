@@ -14,8 +14,8 @@ export default function ValidatorLogin({ navigate, setValidatorSession }: Props)
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleLogin = async (eventForm: React.FormEvent) => {
+    eventForm.preventDefault();
     setError('');
     setLoading(true);
 
@@ -23,7 +23,11 @@ export default function ValidatorLogin({ navigate, setValidatorSession }: Props)
       const cleanUser = username.trim();
       const cleanPass = password.trim();
 
-      // Buscamos directamente en la tabla validators
+      if (!cleanUser || !cleanPass) {
+        throw new Error('Por favor ingresa usuario y contraseña.');
+      }
+
+      // Consultamos la tabla validators usando la columna email (que contiene el usuario)
       const { data: validatorsList, error: valError } = await supabase
         .from('validators')
         .select('*')
@@ -31,6 +35,7 @@ export default function ValidatorLogin({ navigate, setValidatorSession }: Props)
         .eq('password_hash', cleanPass);
 
       if (valError) {
+        console.error('Error de Supabase:', valError);
         throw new Error('Error al conectar con la base de datos.');
       }
 
@@ -44,7 +49,7 @@ export default function ValidatorLogin({ navigate, setValidatorSession }: Props)
         throw new Error('Este validador se encuentra inactivo.');
       }
 
-      // Buscamos el evento asociado
+      // Buscamos el evento asociado en la tabla events
       const { data: eventData, error: eventError } = await supabase
         .from('events')
         .select('*')
@@ -55,11 +60,11 @@ export default function ValidatorLogin({ navigate, setValidatorSession }: Props)
         throw new Error('No se encontró el evento asociado a este validador.');
       }
 
-      // Iniciamos sesión y pasamos al escáner
+      // Guardamos la sesión y redirigimos al escáner
       setValidatorSession(validatorData as Validator, eventData as Event);
       navigate('validator-scanner');
     } catch (err: any) {
-      setError(err.message || 'Error al iniciar sesión como validador.');
+      setError(err.message || 'Ocurrió un error al iniciar sesión.');
     } finally {
       setLoading(false);
     }
