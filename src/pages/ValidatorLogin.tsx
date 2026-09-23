@@ -23,31 +23,40 @@ export default function ValidatorLogin({ navigate, setValidatorSession }: Props)
       const cleanUser = username.trim();
       const cleanPass = password.trim();
 
-      // Buscamos en la tabla validators el usuario (email) y contraseña (password_hash)
-      const { data: validatorData, err: valErr } = await supabase
+      // Consulta directa buscando coincidencia de email y contraseña en la tabla validators
+      const { data: validatorsList, error: valError } = await supabase
         .from('validators')
         .select('*')
         .eq('email', cleanUser)
-        .eq('password_hash', cleanPass)
-        .eq('active', true)
-        .maybeSingle();
+        .eq('password_hash', cleanPass);
 
-      if (valErr || !validatorData) {
-        throw new Error('Usuario o contraseña incorrectos, o validador inactivo.');
+      if (valError) {
+        console.error('Error de Supabase:', valError);
+        throw new Error('Error al conectar con la base de datos.');
       }
 
-      // Obtenemos los detalles del evento asociado a este validador
-      const { data: eventData, err: eventErr } = await supabase
+      if (!validatorsList || validatorsList.length === 0) {
+        throw new Error('Usuario o contraseña incorrectos.');
+      }
+
+      const validatorData = validatorsList[0];
+
+      if (validatorData.active === false) {
+        throw new Error('Este validador se encuentra inactivo.');
+      }
+
+      // Buscamos el evento asociado
+      const { data: eventData, error: eventError } = await supabase
         .from('events')
         .select('*')
         .eq('id', validatorData.event_id)
         .single();
 
-      if (eventErr || !eventData) {
-        throw new Error('No se encontró un evento activo asociado a este validador.');
+      if (eventError || !eventData) {
+        throw new Error('No se encontró el evento asociado a este validador.');
       }
 
-      // Guardamos la sesión del validador y redirigimos al escáner
+      // Guardamos la sesión y entramos al escáner
       setValidatorSession(validatorData as Validator, eventData as Event);
       navigate('validator-scanner');
     } catch (err: any) {
@@ -100,7 +109,7 @@ export default function ValidatorLogin({ navigate, setValidatorSession }: Props)
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   required
-                  placeholder="Ej: validador1_78ba"
+                  placeholder="Ej: validador5prueba"
                   className="input-field pl-10 text-sm"
                 />
               </div>
