@@ -8,14 +8,14 @@ import VPassLogo from '@/components/VPassLogo';
 import { supabase } from '@/lib/supabase';
 
 interface ValidatorData {
-  validatorId: string;
-  validatorName: string;
-  eventName: string;
-  eventId: string;
+  validatorId?: string;
+  validatorName?: string;
+  eventName?: string;
+  eventId?: string;
 }
 
 interface Props {
-  validatorData: ValidatorData;
+  validatorData?: ValidatorData;
   onLogout: () => void;
 }
 
@@ -34,6 +34,12 @@ interface GuestSearchResult {
 }
 
 export default function ValidatorScanner({ validatorData, onLogout }: Props) {
+  // Valores por defecto seguros para evitar cualquier error de "undefined"
+  const safeValidatorId = validatorData?.validatorId || '';
+  const safeValidatorName = validatorData?.validatorName || 'Validador';
+  const safeEventName = validatorData?.eventName || 'Evento';
+  const safeEventId = validatorData?.eventId || '';
+
   const [scanning, setScanning] = useState(false);
   const [lastResult, setLastResult] = useState<ScanResult | null>(null);
   const [scanHistory, setScanHistory] = useState<ScanResult[]>([]);
@@ -57,7 +63,7 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
         }
         await scannerRef.current.clear();
       } catch {
-        // Ignorar errores de limpieza si ya estaba detenido
+        // Ignorar errores de limpieza
       }
       scannerRef.current = null;
     }
@@ -65,10 +71,14 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
   }, []);
 
   const handleScan = useCallback(async (code: string) => {
+    if (!safeValidatorId) {
+      setError('Falta el ID del validador. Vuelve a iniciar sesión.');
+      return;
+    }
     try {
       const { data, error: rpcError } = await supabase.rpc('manual_validate_ticket', {
         p_code: code,
-        p_validator_id: validatorData.validatorId,
+        p_validator_id: safeValidatorId,
       });
       if (rpcError || !data || !data[0]) return;
       const r = data[0];
@@ -81,14 +91,13 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
       setLastResult(result);
       setScanHistory((prev) => [result, ...prev].slice(0, 50));
     } catch {
-      // Ignorar errores de red puntuales en lectura continua
+      // Ignorar errores puntuales de red
     }
-  }, [validatorData.validatorId]);
+  }, [safeValidatorId]);
 
   const startScanning = useCallback(async () => {
     setError('');
     
-    // Asegurar que cualquier instancia previa esté limpia antes de iniciar
     if (scannerRef.current) {
       try {
         if (scannerRef.current.isScanning) {
@@ -96,14 +105,13 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
         }
         await scannerRef.current.clear();
       } catch {
-        // Continuar de todos modos
+        // Continuar
       }
       scannerRef.current = null;
     }
 
     setScanning(true);
 
-    // Pequeño timeout para asegurar que el div contenedor exista en el DOM
     setTimeout(async () => {
       try {
         const scanner = new Html5Qrcode(containerId);
@@ -149,10 +157,10 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
   };
 
   const handleSearch = async () => {
-    if (!searchQuery.trim()) return;
+    if (!searchQuery.trim() || !safeEventId) return;
     setSearchLoading(true);
     const { data } = await supabase.rpc('search_ticket_by_guest', {
-      p_event_id: validatorData.eventId,
+      p_event_id: safeEventId,
       p_search_name: searchQuery.trim(),
     });
     setSearchResults((data as GuestSearchResult[]) || []);
@@ -160,9 +168,10 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
   };
 
   const markEntered = async (ticketId: string) => {
+    if (!safeValidatorId) return;
     const { data } = await supabase.rpc('mark_ticket_entered_by_id', {
       p_ticket_id: ticketId,
-      p_validator_id: validatorData.validatorId,
+      p_validator_id: safeValidatorId,
     });
     if (data && data[0]) {
       const r = data[0];
@@ -193,15 +202,15 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
     <div className="min-h-screen bg-slate-950 text-slate-100 relative overflow-x-hidden flex flex-col">
       <div className="absolute inset-0 bg-grid pointer-events-none opacity-20" />
 
-      {/* Header unificado: Logo izquierda, Evento/Validador centro, Logout derecha */}
+      {/* Header unificado */}
       <header className="relative z-20 flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-slate-950/90 backdrop-blur-xl sticky top-0">
         <div className="flex items-center">
           <VPassLogo size="sm" />
         </div>
         
         <div className="text-center px-2 flex-1 max-w-[200px] sm:max-w-md mx-auto truncate">
-          <p className="text-xs sm:text-sm font-bold text-white truncate">{validatorData.eventName}</p>
-          <p className="text-[10px] sm:text-xs text-cyan-400 font-medium truncate">{validatorData.validatorName}</p>
+          <p className="text-xs sm:text-sm font-bold text-white truncate">{safeEventName}</p>
+          <p className="text-[10px] sm:text-xs text-cyan-400 font-medium truncate">{safeValidatorName}</p>
         </div>
 
         <button 
@@ -215,7 +224,6 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
 
       <div className="relative z-10 max-w-4xl w-full mx-auto px-4 py-4 space-y-4 flex-1">
         
-        {/* Banner de Resultado del último escaneo */}
         {lastResult && cfg && Icon && (
           <div className={`p-4 rounded-xl border ${cfg.bg} ${cfg.border} animate-scale-in flex items-center justify-between shadow-lg`}>
             <div className="flex items-center gap-3">
@@ -241,9 +249,7 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
 
         <div className="grid md:grid-cols-2 gap-4">
           
-          {/* Columna Izquierda: Cámara y Código Manual */}
           <div className="space-y-4">
-            {/* Lector QR por Cámara */}
             <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-xl backdrop-blur-md">
               <div className="flex items-center justify-between mb-2 px-1">
                 <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
@@ -287,7 +293,6 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
               )}
             </div>
 
-            {/* Entrada Manual de Código */}
             <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-xl backdrop-blur-md">
               <div className="flex items-center gap-2 mb-2">
                 <Keyboard size={16} className="text-cyan-400" />
@@ -312,10 +317,8 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
             </div>
           </div>
 
-          {/* Columna Derecha: Estadísticas, Historial y Búsqueda por Nombre */}
           <div className="space-y-4">
             
-            {/* Tarjetas de Estadísticas */}
             <div className="grid grid-cols-2 gap-3">
               <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 text-center shadow-lg">
                 <p className="text-2xl font-black text-emerald-400">{validCount}</p>
@@ -327,7 +330,6 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
               </div>
             </div>
 
-            {/* Historial de Validación Reciente */}
             <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-xl backdrop-blur-md">
               <h3 className="text-xs font-semibold text-white mb-3 flex items-center gap-2">
                 <QrCode size={16} className="text-cyan-400" /> Últimos Registros
@@ -361,7 +363,6 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
               )}
             </div>
 
-            {/* Búsqueda por Nombre de Invitado (Caso Extremo) */}
             <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-xl backdrop-blur-md">
               <button 
                 onClick={() => setShowSearch(!showSearch)} 
