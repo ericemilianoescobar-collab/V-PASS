@@ -1,146 +1,141 @@
 import { useState } from 'react';
-import { ArrowLeft, Lock, Mail, AlertCircle, Loader2, QrCode } from 'lucide-react';
+import { QrCode, Lock, User, ArrowLeft, AlertCircle, Loader2 } from 'lucide-react';
 import VPassLogo from '@/components/VPassLogo';
-import { supabase } from '@/lib/supabase';
-
-interface ValidatorData {
-  validatorId: string;
-  validatorName: string;
-  eventName: string;
-  eventId: string;
-}
+import { supabase, type Validator, type Event } from '@/lib/supabase';
 
 interface Props {
   navigate: (route: string) => void;
-  onLogin: (data: ValidatorData) => void;
+  setValidatorSession: (validator: Validator, event: Event) => void;
 }
 
-export default function ValidatorLogin({ navigate, onLogin }: Props) {
-  const [eventId, setEventId] = useState('');
-  const [email, setEmail] = useState('');
+export default function ValidatorLogin({ navigate, setValidatorSession }: Props) {
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
     try {
-      const { data, error: rpcError } = await supabase.rpc('login_validator', {
-        p_event_id: eventId.trim(),
-        p_email: email.trim(),
-        p_password: password,
-      });
+      const cleanUser = username.trim();
+      const cleanPass = password.trim();
 
-      if (rpcError) throw new Error(rpcError.message);
+      // Buscamos en la tabla validators el usuario (email) y contraseña (password_hash)
+      const { data: validatorData, err: valErr } = await supabase
+        .from('validators')
+        .select('*')
+        .eq('email', cleanUser)
+        .eq('password_hash', cleanPass)
+        .eq('active', true)
+        .maybeSingle();
 
-      if (!data || !data[0] || !data[0].validator_id) {
-        setError('Credenciales incorrectas o evento no válido.');
-        setLoading(false);
-        return;
+      if (valErr || !validatorData) {
+        throw new Error('Usuario o contraseña incorrectos, o validador inactivo.');
       }
 
-      onLogin({
-        validatorId: data[0].validator_id,
-        validatorName: data[0].validator_name,
-        eventName: data[0].event_name,
-        eventId: data[0].event_id,
-      });
-    } catch {
-      setError('Error al iniciar sesión. Verifica tus datos.');
+      // Obtenemos los detalles del evento asociado a este validador
+      const { data: eventData, err: eventErr } = await supabase
+        .from('events')
+        .select('*')
+        .eq('id', validatorData.event_id)
+        .single();
+
+      if (eventErr || !eventData) {
+        throw new Error('No se encontró un evento activo asociado a este validador.');
+      }
+
+      // Guardamos la sesión del validador y redirigimos al escáner
+      setValidatorSession(validatorData as Validator, eventData as Event);
+      navigate('validator-scanner');
+    } catch (err: any) {
+      setError(err.message || 'Error al iniciar sesión como validador.');
+    } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 relative overflow-hidden flex items-center justify-center px-6">
+    <div className="min-h-screen bg-slate-950 relative overflow-hidden flex flex-col justify-between">
       <div className="absolute inset-0 bg-grid pointer-events-none" />
-      <div className="absolute inset-0 bg-radial-cyan pointer-events-none" />
-      <div className="absolute top-1/4 right-1/4 w-72 h-72 bg-cyan-500/10 rounded-full blur-[100px] pointer-events-none" />
+      <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-500/5 rounded-full blur-[120px] pointer-events-none" />
 
-      <div className="relative z-10 w-full max-w-md">
-        <button onClick={() => navigate('home')} className="btn-ghost flex items-center gap-2 mb-6">
-          <ArrowLeft size={18} /> Volver
+      {/* Header */}
+      <header className="relative z-20 flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/80 backdrop-blur-xl">
+        <button onClick={() => navigate('home')} className="flex items-center gap-2">
+          <VPassLogo size="sm" />
         </button>
+        <button onClick={() => navigate('home')} className="btn-ghost flex items-center gap-2 text-sm text-slate-400 hover:text-white">
+          <ArrowLeft size={16} /> Volver al inicio
+        </button>
+      </header>
 
-        <div className="card p-8 animate-scale-in">
-          <div className="flex flex-col items-center mb-6">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 border border-cyan-400/30 flex items-center justify-center mb-3">
-              <QrCode size={32} className="text-cyan-400" />
+      {/* Main Login Box */}
+      <main className="relative z-10 max-w-md w-full mx-auto px-4 py-12 flex-1 flex items-center justify-center">
+        <div className="card p-8 w-full space-y-6 border border-slate-800 bg-slate-900/90 shadow-2xl">
+          <div className="text-center space-y-2">
+            <div className="w-14 h-14 bg-cyan-500/10 border border-cyan-500/20 rounded-2xl flex items-center justify-center mx-auto text-cyan-400">
+              <QrCode size={28} />
             </div>
-            <h1 className="text-xl font-bold text-white">Acceso Validador</h1>
-            <p className="text-sm text-slate-400 mt-1">Ingresa con las credenciales del evento</p>
+            <h2 className="text-xl font-extrabold text-white">Portal de Validador</h2>
+            <p className="text-xs text-slate-400">Ingresa las credenciales asignadas para tu puesto de control</p>
           </div>
 
           {error && (
-            <div className="mb-4 flex items-center gap-2 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm animate-fade-in">
-              <AlertCircle size={18} />
-              {error}
+            <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm animate-fade-in">
+              <AlertCircle size={18} className="shrink-0" />
+              <span>{error}</span>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1.5">ID del evento</label>
-              <input
-                type="text"
-                value={eventId}
-                onChange={(e) => setEventId(e.target.value)}
-                required
-                placeholder="Ingresa el ID del evento"
-                className="input-field"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1.5">Correo</label>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="block text-xs font-medium text-slate-300">Usuario de acceso</label>
               <div className="relative">
-                <Mail size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <User size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
                 <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
                   required
-                  placeholder="validador@evento.com"
-                  className="input-field pl-10"
+                  placeholder="Ej: validador1_78ba"
+                  className="input-field pl-10 text-sm"
                 />
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1.5">Contraseña</label>
+            <div className="space-y-1.5">
+              <label className="block text-xs font-medium text-slate-300">Contraseña</label>
               <div className="relative">
-                <Lock size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   placeholder="••••••••"
-                  className="input-field pl-10"
+                  className="input-field pl-10 text-sm"
                 />
               </div>
             </div>
 
-            <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2">
-              {loading ? (
-                <><Loader2 size={18} className="animate-spin" /> Verificando...</>
-              ) : (
-                'Ingresar al evento'
-              )}
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-primary w-full py-3 text-sm flex items-center justify-center gap-2 mt-2"
+            >
+              {loading ? <Loader2 size={18} className="animate-spin" /> : <QrCode size={18} />}
+              Ingresar al Escáner
             </button>
           </form>
-
-          <div className="mt-6 pt-6 border-t border-slate-800">
-            <div className="flex items-center justify-center gap-2">
-              <VPassLogo size="sm" showText={false} />
-              <p className="text-xs text-slate-500">Las credenciales las proporciona el organizador del evento</p>
-            </div>
-          </div>
         </div>
-      </div>
+      </main>
+
+      <footer className="relative z-20 py-4 text-center text-xs text-slate-600 border-t border-slate-900">
+        V-PASS Entry Control • Sistema de Validación por QR
+      </footer>
     </div>
   );
 }
