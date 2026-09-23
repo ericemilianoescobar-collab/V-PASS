@@ -234,7 +234,7 @@ export function CreateValidatorModal({ eventId, onClose, onCreated }: { eventId:
   );
 }
 
-// ============ 3. ADD GUEST (SIN ENTRADA FANTASMA - LIMPIO PARA ORGANIZADOR) ============
+// ============ 3. ADD GUEST ============
 
 export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClose: () => void; onAdded: () => void }) {
   const [name, setName] = useState('');
@@ -480,7 +480,7 @@ function ReportStat({ label, value, color }: { label: string; value: number; col
   );
 }
 
-// ============ 5. SOPORTE TÉCNICO (CORREGIDO SIN MAESTRO Y LIBRE DE BLOQUEO .COM) ============
+// ============ 5. SOPORTE TÉCNICO ============
 
 export function SupportModal({ onClose, onSupportLoginSuccess }: { onClose: () => void; onSupportLoginSuccess: () => void }) {
   const [credential, setCredential] = useState('');
@@ -494,7 +494,6 @@ export function SupportModal({ onClose, onSupportLoginSuccess }: { onClose: () =
     setError('');
 
     setTimeout(() => {
-      // Validación estricta con las credenciales que utilizas
       if (
         credential.trim().toUpperCase() === 'V-PASS172417@.COM' && 
         password === 'M@rciano172417'
