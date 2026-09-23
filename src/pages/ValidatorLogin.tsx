@@ -23,7 +23,7 @@ export default function ValidatorLogin({ navigate, setValidatorSession }: Props)
       const cleanUser = username.trim();
       const cleanPass = password.trim();
 
-      // Consulta directa buscando coincidencia de email y contraseña en la tabla validators
+      // Buscamos directamente en la tabla validators
       const { data: validatorsList, error: valError } = await supabase
         .from('validators')
         .select('*')
@@ -31,7 +31,6 @@ export default function ValidatorLogin({ navigate, setValidatorSession }: Props)
         .eq('password_hash', cleanPass);
 
       if (valError) {
-        console.error('Error de Supabase:', valError);
         throw new Error('Error al conectar con la base de datos.');
       }
 
@@ -56,7 +55,7 @@ export default function ValidatorLogin({ navigate, setValidatorSession }: Props)
         throw new Error('No se encontró el evento asociado a este validador.');
       }
 
-      // Guardamos la sesión y entramos al escáner
+      // Iniciamos sesión y pasamos al escáner
       setValidatorSession(validatorData as Validator, eventData as Event);
       navigate('validator-scanner');
     } catch (err: any) {
