@@ -4,7 +4,7 @@ import { jsPDF } from 'jspdf';
 /*
  * ticketArt.ts — utilidades para generar QR, PDF e imagen de entradas.
  * generateQRDataUrl: genera el código QR como data URL (PNG).
- * downloadTicketImage: descarga la entrada como imagen PNG con fondo + QR.
+ * downloadTicketImage: descarga la entrada como imagen limpia basada en las coordenadas del organizador.
  * downloadTicketPDF: descarga la entrada como PDF.
  * buildWhatsAppMessage: construye el mensaje predeterminado para enviar al invitado.
  */
@@ -26,69 +26,50 @@ export async function downloadTicketImage(opts: {
   qrPosY: number;
   qrSize: number;
 }): Promise<void> {
-  const { code, attendeeName, eventName, eventDate, eventTime, amPm, location, bgImageUrl, qrPosX, qrPosY, qrSize } = opts;
+  const { code, bgImageUrl, qrPosX, qrPosY, qrSize, attendeeName } = opts;
   const W = 800, H = 1200;
   const canvas = document.createElement('canvas');
-  canvas.width = W; canvas.height = H;
+  canvas.width = W; 
+  canvas.height = H;
   const ctx = canvas.getContext('2d')!;
 
-  // Background
+  // 1. Dibujar el fondo configurado por el organizador (o fallback corporativo si no hay)
   if (bgImageUrl) {
     try {
       const img = await loadImage(bgImageUrl);
       const ratio = Math.max(W / img.width, H / img.height);
       const dw = img.width * ratio, dh = img.height * ratio;
       ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
-    } catch { drawFallbackBg(ctx, W, H); }
+    } catch {
+      drawFallbackBg(ctx, W, H);
+    }
   } else {
     drawFallbackBg(ctx, W, H);
   }
 
-  // Dark overlay for readability
-  ctx.fillStyle = 'rgba(10, 15, 26, 0.55)';
-  ctx.fillRect(0, 0, W, H);
-
-  // Event name at top
-  ctx.fillStyle = '#22d3ee';
-  ctx.font = 'bold 36px Inter, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText(eventName, W / 2, 80);
-
-  // QR code
+  // 2. Generar y posicionar el código QR exactamente según los porcentajes definidos en el panel
   const qrDataUrl = await generateQRDataUrl(code);
   const qrImg = await loadImage(qrDataUrl);
-  const qrW = (qrSize / 100) * W * 0.8;
-  const qrX = (qrPosX / 100) * (W - qrW);
-  const qrY = (qrPosY / 100) * (H - qrW);
 
-  // White rounded background for QR
-  const pad = 20;
+  // El tamaño base del QR se calcula con base en el ancho del canvas y el slider qrSize (porcentaje)
+  const qrW = (qrSize / 100) * W;
+  
+  // Posicionamiento preciso basado en los porcentajes X e Y del organizador
+  const qrX = (qrPosX / 100) * W - (qrW / 2);
+  const qrY = (qrPosY / 100) * H - (qrW / 2);
+
+  // Fondo blanco con esquinas redondeadas bajo el QR para garantizar lectura perfecta en cualquier fondo
+  const pad = 16;
   ctx.fillStyle = '#ffffff';
   roundRect(ctx, qrX - pad, qrY - pad, qrW + pad * 2, qrW + pad * 2, 16);
   ctx.fill();
+
+  // Dibujar el código QR limpio
   ctx.drawImage(qrImg, qrX, qrY, qrW, qrW);
 
-  // Attendee name
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 28px Inter, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText(attendeeName || 'Invitado', W / 2, qrY + qrW + 60);
-
-  // Event details
-  ctx.fillStyle = '#94a3b8';
-  ctx.font = '20px Inter, sans-serif';
-  const dateStr = `${eventDate}${eventTime ? ` - ${eventTime} ${amPm || ''}` : ''}`;
-  ctx.fillText(dateStr, W / 2, qrY + qrW + 95);
-  if (location) ctx.fillText(location, W / 2, qrY + qrW + 125);
-
-  // V-PASS footer
-  ctx.fillStyle = '#22d3ee';
-  ctx.font = 'bold 18px Inter, sans-serif';
-  ctx.fillText('V-PASS', W / 2, H - 40);
-
-  // Download
+  // Descarga directa del archivo de imagen optimizado
   const link = document.createElement('a');
-  link.download = `entrada-${attendeeName || 'invitado'}.png`;
+  link.download = `entrada-${attendeeName ? attendeeName.toLowerCase().replace(/\s+/g, '-') : 'invitado'}.png`;
   link.href = canvas.toDataURL('image/png');
   link.click();
 }
@@ -128,7 +109,7 @@ export async function downloadTicketPDF(opts: {
   pdf.setTextColor(148, 163, 184);
   pdf.setFontSize(12);
   pdf.setFont('helvetica', 'normal');
-  const dateStr = `Fecha: ${eventDate}${eventTime ? ` - ${eventTime} ${amPm || ''}` : ''}`;
+  const dateStr = `Fecha: ${eventDate}${eventTime ? ` - ${eventTime}${amPm || ''}` : ''}`;
   pdf.text(dateStr, 105, 185, { align: 'center' });
   if (location) pdf.text(`Ubicación: ${location}`, 105, 195, { align: 'center' });
 

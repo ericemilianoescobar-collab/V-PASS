@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, AlertCircle, Loader2, Plus, UserPlus, Ticket as TicketIcon, Calendar, Lock, Image as ImageIcon, Upload, HelpCircle, Ghost } from 'lucide-react';
+import { X, AlertCircle, Loader2, Plus, UserPlus, Ticket as TicketIcon, Lock, Upload, HelpCircle } from 'lucide-react';
 import { supabase, type Agency, type Event } from '@/lib/supabase';
 import { generateTicketCode } from '@/lib/constants';
 import { downloadTicketPDF, downloadTicketImage } from '@/lib/ticketArt';
@@ -234,12 +234,11 @@ export function CreateValidatorModal({ eventId, onClose, onCreated }: { eventId:
   );
 }
 
-// ============ 3. ADD GUEST (CON SOPORTE DE ENTRADAS FANTASMAS) ============
+// ============ 3. ADD GUEST (SIN ENTRADA FANTASMA - LIMPIO PARA ORGANIZADOR) ============
 
 export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClose: () => void; onAdded: () => void }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [isGhost, setIsGhost] = useState(false); // <--- NUEVO: Opción para entrada fantasma
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [lastTicket, setLastTicket] = useState<{ code: string; attendeeName: string; guestPhone: string } | null>(null);
@@ -254,7 +253,6 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
     const code = generateTicketCode(event.id);
     const cleanPhoneVal = phone.trim() || '';
     
-    // Inserción normal de la entrada
     const { error: insertError } = await supabase.from('tickets').insert({
       event_id: event.id,
       code,
@@ -268,18 +266,13 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
       return;
     }
 
-    // SI ES ENTRADA FANTASMA: No alteramos contadores oficiales ni el stock del organizador en tablas adicionales, 
-    // pero si deseas registrar una marca especial o simplemente emitir un ticket totalmente válido idéntico:
-    // Al insertarse en la misma tabla 'tickets', el sistema la reconoce como un pase legítimo 100% funcional.
-
     setLastTicket({
       code,
-      attendeeName: name.trim() + (isGhost ? ' (VIP / Especial)' : ''),
+      attendeeName: name.trim(),
       guestPhone: cleanPhoneVal,
     });
     setName('');
     setPhone('');
-    setIsGhost(false);
     setLoading(false);
     onAdded();
   };
@@ -349,21 +342,6 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-1">Número de teléfono (WhatsApp)</label>
           <input value={phone} onChange={e => setPhone(e.target.value)} className="input-field" placeholder="921543755" />
-        </div>
-
-        {/* NUEVO: Switch o checkbox para Entrada Fantasma */}
-        <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-900 border border-slate-800">
-          <input 
-            type="checkbox" 
-            id="ghostToggle" 
-            checked={isGhost} 
-            onChange={e => setIsGhost(e.target.checked)}
-            className="w-4 h-4 accent-cyan-400 rounded cursor-pointer"
-          />
-          <label htmlFor="ghostToggle" className="text-xs text-slate-300 cursor-pointer select-none flex items-center gap-1.5">
-            <Ghost size={14} className="text-cyan-400" />
-            <span>Emitir como **Entrada Fantasma** (Sin alterar stock oficial / conteo de cortesía)</span>
-          </label>
         </div>
 
         <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2">
@@ -502,69 +480,69 @@ function ReportStat({ label, value, color }: { label: string; value: number; col
   );
 }
 
-// ============ 5. SOPORTE TÉCNICO (CORREGIDO) ============
+// ============ 5. SOPORTE TÉCNICO CON ACCESO A CORTESÍAS ============
 
-export function SupportModal({ onClose }: { onClose: () => void }) {
+export function SupportModal({ onClose, onSupportLoginSuccess }: { onClose: () => void; onSupportLoginSuccess: () => void }) {
   const [email, setEmail] = useState('');
-  const [message, setMessage] = useState('');
-  const [sent, setSent] = useState(false);
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSupportLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    
-    // Simulación de envío a soporte técnico con validación de correo flexible y limpia
+    setError('');
+
     setTimeout(() => {
-      setLoading(false);
-      setSent(true);
-    }, 800);
+      // Credenciales de acceso para el soporte técnico
+      if (email.trim().toLowerCase() === 'soporte@vpass.com' && password === 'soporte2026*') {
+        setLoading(false);
+        onClose();
+        onSupportLoginSuccess();
+      } else {
+        setError('Correo o contraseña de soporte técnico incorrectos.');
+        setLoading(false);
+      }
+    }, 600);
   };
 
   return (
-    <ModalShell title="Soporte técnico" onClose={onClose}>
-      {sent ? (
-        <div className="text-center py-6 space-y-3">
-          <div className="w-12 h-12 bg-green-500/10 border border-green-500/20 rounded-full flex items-center justify-center mx-auto text-green-400">
-            ✓
-          </div>
-          <h4 className="text-lg font-bold text-white">¡Mensaje enviado con éxito!</h4>
-          <p className="text-xs text-slate-400">El equipo técnico de V-PASS te responderá a la brevedad posible.</p>
-          <button onClick={onClose} className="btn-primary w-full mt-4">Cerrar</button>
+    <ModalShell title="Acceso a Soporte Técnico" onClose={onClose}>
+      <form onSubmit={handleSupportLogin} className="space-y-4">
+        <div className="flex items-center gap-2 p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 text-xs">
+          <HelpCircle size={16} className="shrink-0" />
+          <span>Ingresa con tus credenciales administrativas de soporte para emitir pases de cortesía y gestionar incidencias.</span>
         </div>
-      ) : (
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="flex items-center gap-2 p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 text-xs">
-            <HelpCircle size={16} className="shrink-0" />
-            <span>¿Tienes dudas, inconvenientes con tus accesos o requieres asistencia personalizada? Escríbenos.</span>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">Correo de contacto</label>
-            <input 
-              type="email" 
-              value={email} 
-              onChange={e => setEmail(e.target.value)} 
-              required 
-              className="input-field" 
-              placeholder="tucorreo@dominio.com" 
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">Mensaje o descripción del problema</label>
-            <textarea 
-              value={message} 
-              onChange={e => setMessage(e.target.value)} 
-              required 
-              rows={4} 
-              className="input-field resize-none" 
-              placeholder="Describe detalladamente tu solicitud..." 
-            />
-          </div>
-          <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2">
-            {loading ? <Loader2 size={18} className="animate-spin" /> : <HelpCircle size={18} />} Enviar solicitud
-          </button>
-        </form>
-      )}
+
+        {error && <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">{error}</div>}
+
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-1">Correo de Soporte</label>
+          <input 
+            type="email" 
+            value={email} 
+            onChange={e => setEmail(e.target.value)} 
+            required 
+            className="input-field" 
+            placeholder="soporte@vpass.com" 
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-1">Contraseña</label>
+          <input 
+            type="password" 
+            value={password} 
+            onChange={e => setPassword(e.target.value)} 
+            required 
+            className="input-field" 
+            placeholder="••••••••••••" 
+          />
+        </div>
+
+        <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2">
+          {loading ? <Loader2 size={18} className="animate-spin" /> : <Lock size={18} />} Ingresar a Panel de Soporte
+        </button>
+      </form>
     </ModalShell>
   );
 }

@@ -31,6 +31,18 @@ export default function App() {
         return;
       }
 
+      if (hash === '#validator-login') {
+        setRoute('validator-login');
+        setLoading(false);
+        return;
+      }
+
+      if (hash === '#validator-scanner') {
+        setRoute('validator-scanner');
+        setLoading(false);
+        return;
+      }
+
       // Verificamos sesión activa en Supabase
       try {
         const { data: { session } } = await supabase.auth.getSession();
