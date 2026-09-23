@@ -69,7 +69,6 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
     const currentActive = activeList.length > 0 ? activeList[0] : null;
     if (currentActive) {
       setActiveEvent(currentActive);
-      await ensureDefaultValidators(currentActive.id);
       fetchValidators(currentActive.id);
       fetchTickets(currentActive.id);
     } else {
@@ -83,32 +82,13 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
 
   useEffect(() => { fetchEvents(); }, [fetchEvents]);
 
-  // Asegura que siempre existan los 5 validadores predeterminados para el evento
-  const ensureDefaultValidators = async (eventId: string) => {
-    const { data: existing } = await supabase.from('validators').select('*').eq('event_id', eventId);
-    const currentList = existing || [];
-
-    if (currentList.length < 5) {
-      for (let i = 1; i <= 5; i++) {
-        const valName = `Validador ${i}`;
-        const exists = currentList.some(v => v.name === valName);
-        if (!exists) {
-          const defaultUser = `validador${i}_${eventId.substring(0, 4)}`;
-          const defaultPass = Math.random().toString(36).substring(2, 8);
-          await supabase.from('validators').insert({
-            event_id: eventId,
-            name: valName,
-            email: defaultUser,
-            password_hash: defaultPass,
-            active: true
-          });
-        }
-      }
-    }
-  };
-
+  // Lee directamente los validadores configurados en Supabase para el evento activo
   const fetchValidators = async (eventId: string) => {
-    const { data } = await supabase.from('validators').select('id, event_id, email, password_hash, name, active, created_at').eq('event_id', eventId).order('name', { ascending: true });
+    const { data } = await supabase
+      .from('validators')
+      .select('id, event_id, email, password_hash, name, active, created_at')
+      .eq('event_id', eventId)
+      .order('name', { ascending: true });
     setValidators((data as Validator[]) || []);
   };
 
@@ -133,7 +113,6 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
     setEvents(prev => [ev, ...prev]);
     setActiveEvent(ev);
     setShowCreateEvent(false);
-    await ensureDefaultValidators(ev.id);
     fetchValidators(ev.id);
     fetchTickets(ev.id);
     setTab('event');
@@ -537,18 +516,24 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
             </div>
           )}
 
-          {/* VALIDATORS TAB (MUESTRA SIEMPRE LOS 5 VALIDADORES FIJOS CON USUARIO Y CONTRASEÑA) */}
+          {/* VALIDATORS TAB (LEE DIRECTAMENTE LOS DATOS INGRESADOS EN SUPABASE) */}
           {tab === 'validators' && (
             <div className="space-y-4 animate-fade-in">
               <div>
                 <h3 className="text-lg font-bold text-white">Validadores asignados</h3>
-                <p className="text-sm text-slate-400">Credenciales de acceso directo para el personal de puerta (5 puestos)</p>
+                <p className="text-sm text-slate-400">Credenciales configuradas en el sistema para el personal de puerta de este evento</p>
               </div>
 
               {!activeEvent ? (
                 <div className="card p-12 text-center">
                   <Users size={48} className="text-slate-600 mx-auto mb-3" />
                   <p className="text-slate-400">Crea un evento activo primero para ver los validadores</p>
+                </div>
+              ) : validators.length === 0 ? (
+                <div className="card p-12 text-center border border-dashed border-slate-800">
+                  <QrCode size={48} className="text-slate-600 mx-auto mb-3" />
+                  <p className="text-white font-semibold mb-1">No hay validadores configurados en Supabase</p>
+                  <p className="text-xs text-slate-400">Agrega registros en tu tabla <code className="text-cyan-400 font-mono">validators</code> asignando el <code className="text-cyan-400 font-mono">event_id</code> de este evento.</p>
                 </div>
               ) : (
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -559,19 +544,21 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                           <div className="w-9 h-9 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
                             <QrCode size={18} />
                           </div>
-                          <span className="font-bold text-white text-base">{v.name}</span>
+                          <span className="font-bold text-white text-base">{v.name || 'Validador'}</span>
                         </div>
-                        <span className="badge bg-green-500/10 text-green-300 border border-green-500/20 text-xs">Activo</span>
+                        <span className={`badge ${v.active ? 'bg-green-500/10 text-green-300 border border-green-500/20' : 'bg-red-500/10 text-red-300 border border-red-500/20'} text-xs`}>
+                          {v.active ? 'Activo' : 'Inactivo'}
+                        </span>
                       </div>
 
                       <div className="space-y-2 pt-2 border-t border-slate-800/80 text-xs font-mono">
                         <div className="flex items-center justify-between bg-slate-950 p-2.5 rounded-lg border border-slate-800">
-                          <span className="text-slate-400">Usuario:</span>
-                          <span className="text-cyan-300 font-semibold">{v.email}</span>
+                          <span className="text-slate-400 font-sans">Usuario:</span>
+                          <span className="text-cyan-300 font-semibold">{v.email || 'Sin configurar'}</span>
                         </div>
                         <div className="flex items-center justify-between bg-slate-950 p-2.5 rounded-lg border border-slate-800">
-                          <span className="text-slate-400">Contraseña:</span>
-                          <span className="text-green-300 font-semibold">{v.password_hash || '••••••'}</span>
+                          <span className="text-slate-400 font-sans">Contraseña:</span>
+                          <span className="text-green-300 font-semibold">{v.password_hash || 'Sin configurar'}</span>
                         </div>
                       </div>
                     </div>
