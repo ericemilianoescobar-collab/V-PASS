@@ -33,7 +33,6 @@ interface GuestSearchResult {
   status: string;
 }
 
-// Sonidos sintéticos nativos (sin archivos externos)
 const playSound = (type: 'success' | 'error') => {
   try {
     const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -45,28 +44,25 @@ const playSound = (type: 'success' | 'error') => {
 
     if (type === 'success') {
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5
-      osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.1); // A5
+      osc.frequency.setValueAtTime(587.33, audioCtx.currentTime);
+      osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.1);
       gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
       osc.start();
       osc.stop(audioCtx.currentTime + 0.3);
     } else {
       osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(220, audioCtx.currentTime); // A3
-      osc.frequency.setValueAtTime(150, audioCtx.currentTime + 0.15); // Grave
+      osc.frequency.setValueAtTime(220, audioCtx.currentTime);
+      osc.frequency.setValueAtTime(150, audioCtx.currentTime + 0.15);
       gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
       osc.start();
       osc.stop(audioCtx.currentTime + 0.4);
     }
-  } catch {
-    // Los navegadores bloquean audio si no hubo interacción previa
-  }
+  } catch {}
 };
 
 export default function ValidatorScanner({ validatorData, onLogout }: Props) {
-  // Obtener IDs de props, localStorage o buscar un respaldo automático
   const [activeValidatorId, setActiveValidatorId] = useState<string>(
     validatorData?.validatorId || 
     localStorage.getItem('vpass_validator_id') || 
@@ -79,15 +75,17 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
     localStorage.getItem('event_id') || ''
   );
 
-  const safeValidatorName = 
+  const [safeValidatorName, setSafeValidatorName] = useState<string>(
     validatorData?.validatorName || 
     localStorage.getItem('vpass_validator_name') || 
-    localStorage.getItem('validator_name') || 'Validador Activo';
+    localStorage.getItem('validator_name') || 'Validador Activo'
+  );
 
-  const safeEventName = 
+  const [safeEventName, setSafeEventName] = useState<string>(
     validatorData?.eventName || 
     localStorage.getItem('vpass_event_name') || 
-    localStorage.getItem('event_name') || 'Evento Principal';
+    localStorage.getItem('event_name') || 'Evento Principal'
+  );
 
   const [scanning, setScanning] = useState(false);
   const [lastResult, setLastResult] = useState<ScanResult | null>(null);
@@ -106,30 +104,47 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
   const containerId = 'qr-reader';
   const cooldownRef = useRef(false);
 
-  // Auto-recuperación: Si no hay ID de validador, buscamos el primero en Supabase para evitar bloqueos
+  // Auto-recuperación desde la tabla correcta 'validators' y trayendo el nombre del evento
   useEffect(() => {
     async function recoverValidator() {
       if (!activeValidatorId) {
         setLoadingAutoId(true);
         try {
-          const { data, error } = await supabase.from('event_validators').select('id, event_id, name').limit(1);
+          const { data, error } = await supabase.from('validators').select('id, event_id, name, active').eq('active', true).limit(1);
           if (!error && data && data.length > 0) {
-            setActiveValidatorId(data[0].id);
-            setActiveEventId(data[0].event_id);
-            localStorage.setItem('vpass_validator_id', data[0].id);
-            localStorage.setItem('vpass_event_id', data[0].event_id);
+            const v = data[0];
+            setActiveValidatorId(v.id);
+            setActiveEventId(v.event_id);
+            setSafeValidatorName(v.name);
+            localStorage.setItem('vpass_validator_id', v.id);
+            localStorage.setItem('vpass_event_id', v.event_id);
+            localStorage.setItem('vpass_validator_name', v.name);
+
+            // Obtener nombre del evento
+            const { data: evData } = await supabase.from('events').select('name').eq('id', v.event_id).single();
+            if (evData?.name) {
+              setSafeEventName(evData.name);
+              localStorage.setItem('vpass_event_name', evData.name);
+            }
           } else {
-            setError('No se encontró ningún validador registrado en la base de datos. Por favor inicia sesión desde el panel.');
+            setError('No se encontró ningún validador activo en la base de datos.');
           }
         } catch {
-          setError('Error de conexión al recuperar las credenciales del validador.');
+          setError('Error de conexión al recuperar las credenciales.');
         } finally {
           setLoadingAutoId(false);
         }
+      } else if (activeEventId && safeEventName === 'Evento Principal') {
+        supabase.from('events').select('name').eq('id', activeEventId).single().then(({ data }) => {
+          if (data?.name) {
+            setSafeEventName(data.name);
+            localStorage.setItem('vpass_event_name', data.name);
+          }
+        });
       }
     }
     void recoverValidator();
-  }, [activeValidatorId]);
+  }, [activeValidatorId, activeEventId, safeEventName]);
 
   const stopScanning = useCallback(async () => {
     if (scannerRef.current) {
@@ -138,9 +153,7 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
           await scannerRef.current.stop();
         }
         await scannerRef.current.clear();
-      } catch {
-        // Ignorar
-      }
+      } catch {}
       scannerRef.current = null;
     }
     setScanning(false);
@@ -201,9 +214,7 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
           await scannerRef.current.stop();
         }
         await scannerRef.current.clear();
-      } catch {
-        // Continuar
-      }
+      } catch {}
       scannerRef.current = null;
     }
 
@@ -213,17 +224,11 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
       try {
         const scanner = new Html5Qrcode(containerId);
         scannerRef.current = scanner;
-        
-        // Tamaño cuadrado perfecto adaptado a móvil
         const boxSize = Math.min(window.innerWidth - 64, 260);
 
         await scanner.start(
           { facingMode: 'environment' },
-          { 
-            fps: 15, 
-            qrbox: { width: boxSize, height: boxSize },
-            aspectRatio: 1.0
-          },
+          { fps: 15, qrbox: { width: boxSize, height: boxSize }, aspectRatio: 1.0 },
           async (decodedText: string) => {
             if (cooldownRef.current) return;
             cooldownRef.current = true;
@@ -258,9 +263,7 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
     setManualLoading(false);
   };
 
-  const handleClearOverlay = () => {
-    setLastResult(null);
-  };
+  const handleClearOverlay = () => setLastResult(null);
 
   const handleSearch = async () => {
     if (!searchQuery.trim() || !activeEventId) return;
@@ -296,46 +299,11 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
   };
 
   const resultConfig: Record<string, { icon: any; color: string; bg: string; border: string; title: string; fullBg: string }> = {
-    success: { 
-      icon: CheckCircle2, 
-      color: 'text-emerald-300', 
-      bg: 'bg-emerald-500/20', 
-      border: 'border-emerald-500/40', 
-      title: '¡INGRESO VÁLIDO!', 
-      fullBg: 'bg-emerald-950/95 border-emerald-500' 
-    },
-    already_used: { 
-      icon: AlertTriangle, 
-      color: 'text-amber-300', 
-      bg: 'bg-amber-500/20', 
-      border: 'border-amber-500/40', 
-      title: '¡QR YA UTILIZADO!', 
-      fullBg: 'bg-amber-950/95 border-amber-500' 
-    },
-    invalid: { 
-      icon: XCircle, 
-      color: 'text-red-300', 
-      bg: 'bg-red-500/20', 
-      border: 'border-red-500/40', 
-      title: '¡CÓDIGO INVÁLIDO!', 
-      fullBg: 'bg-red-950/95 border-red-500' 
-    },
-    cancelled: { 
-      icon: XCircle, 
-      color: 'text-red-300', 
-      bg: 'bg-red-500/20', 
-      border: 'border-red-500/40', 
-      title: '¡ENTRADA CANCELADA!', 
-      fullBg: 'bg-red-950/95 border-red-500' 
-    },
-    wrong_event: { 
-      icon: XCircle, 
-      color: 'text-red-300', 
-      bg: 'bg-red-500/20', 
-      border: 'border-red-500/40', 
-      title: '¡OTRO EVENTO!', 
-      fullBg: 'bg-red-950/95 border-red-500' 
-    },
+    success: { icon: CheckCircle2, color: 'text-emerald-300', bg: 'bg-emerald-500/20', border: 'border-emerald-500/40', title: '¡INGRESO VÁLIDO!', fullBg: 'bg-emerald-950/95 border-emerald-500' },
+    already_used: { icon: AlertTriangle, color: 'text-amber-300', bg: 'bg-amber-500/20', border: 'border-amber-500/40', title: '¡QR YA UTILIZADO!', fullBg: 'bg-amber-950/95 border-amber-500' },
+    invalid: { icon: XCircle, color: 'text-red-300', bg: 'bg-red-500/20', border: 'border-red-500/40', title: '¡CÓDIGO INVÁLIDO!', fullBg: 'bg-red-950/95 border-red-500' },
+    cancelled: { icon: XCircle, color: 'text-red-300', bg: 'bg-red-500/20', border: 'border-red-500/40', title: '¡ENTRADA CANCELADA!', fullBg: 'bg-red-950/95 border-red-500' },
+    wrong_event: { icon: XCircle, color: 'text-red-300', bg: 'bg-red-500/20', border: 'border-red-500/40', title: '¡OTRO EVENTO!', fullBg: 'bg-red-950/95 border-red-500' },
   };
 
   const cfg = lastResult ? resultConfig[lastResult.status] : null;
@@ -346,56 +314,34 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
     <div className="min-h-screen bg-slate-950 text-slate-100 relative overflow-x-hidden flex flex-col">
       <div className="absolute inset-0 bg-grid pointer-events-none opacity-20" />
 
-      {/* PANTALLA COMPLETA DE ALERTA DE ESCANEO */}
       {lastResult && cfg && Icon && (
-        <div 
-          onClick={handleClearOverlay}
-          className={`fixed inset-0 z-50 flex flex-col items-center justify-center p-6 text-center cursor-pointer backdrop-blur-md animate-fade-in border-4 ${cfg.fullBg}`}
-        >
+        <div onClick={handleClearOverlay} className={`fixed inset-0 z-50 flex flex-col items-center justify-center p-6 text-center cursor-pointer backdrop-blur-md animate-fade-in border-4 ${cfg.fullBg}`}>
           <div className={`w-24 h-24 rounded-full ${cfg.bg} border ${cfg.border} flex items-center justify-center mb-4 animate-bounce`}>
             <Icon size={56} className={cfg.color} />
           </div>
-          <h1 className={`text-2xl sm:text-4xl font-black tracking-wider mb-2 ${cfg.color}`}>
-            {cfg.title}
-          </h1>
+          <h1 className={`text-2xl sm:text-4xl font-black tracking-wider mb-2 ${cfg.color}`}>{cfg.title}</h1>
           {lastResult.attendeeName && (
-            <p className="text-xl sm:text-3xl font-bold text-white mb-2 bg-black/40 px-6 py-2 rounded-2xl border border-white/10">
-              {lastResult.attendeeName}
-            </p>
+            <p className="text-xl sm:text-3xl font-bold text-white mb-2 bg-black/40 px-6 py-2 rounded-2xl border border-white/10">{lastResult.attendeeName}</p>
           )}
           {lastResult.code && (
-            <p className="text-sm font-mono text-slate-300 mb-6 bg-black/30 px-3 py-1 rounded-lg">
-              Código: {lastResult.code}
-            </p>
+            <p className="text-sm font-mono text-slate-300 mb-6 bg-black/30 px-3 py-1 rounded-lg">Código: {lastResult.code}</p>
           )}
-          <p className="text-xs text-slate-400 animate-pulse mt-4">
-            [ Toca en cualquier lugar para continuar escaneando ]
-          </p>
+          <p className="text-xs text-slate-400 animate-pulse mt-4">[ Toca en cualquier lugar para continuar escaneando ]</p>
         </div>
       )}
 
-      {/* Header */}
       <header className="relative z-20 flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-slate-950/90 backdrop-blur-xl sticky top-0">
-        <div className="flex items-center">
-          <VPassLogo size="sm" />
-        </div>
-        
+        <div className="flex items-center"><VPassLogo size="sm" /></div>
         <div className="text-center px-2 flex-1 max-w-[200px] sm:max-w-md mx-auto truncate">
           <p className="text-xs sm:text-sm font-bold text-white truncate">{safeEventName}</p>
           <p className="text-[10px] sm:text-xs text-cyan-400 font-medium truncate">{safeValidatorName}</p>
         </div>
-
-        <button 
-          onClick={onLogout} 
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-medium hover:bg-red-500/20 transition-all shrink-0"
-        >
-          <LogOut size={14} /> 
-          <span className="hidden sm:inline">Salir</span>
+        <button onClick={onLogout} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-medium hover:bg-red-500/20 transition-all shrink-0">
+          <LogOut size={14} /> <span className="hidden sm:inline">Salir</span>
         </button>
       </header>
 
       <div className="relative z-10 max-w-4xl w-full mx-auto px-4 py-4 space-y-4 flex-1">
-        
         {loadingAutoId && (
           <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center gap-2 text-xs text-cyan-300">
             <Loader2 size={16} className="animate-spin" /> Conectando credenciales del validador...
@@ -415,8 +361,6 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
         )}
 
         <div className="grid md:grid-cols-2 gap-4">
-          
-          {/* Cámara con Cuadrado Exacto */}
           <div className="space-y-4">
             <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-xl backdrop-blur-md">
               <div className="flex items-center justify-between mb-2 px-1">
@@ -428,10 +372,8 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
                 </span>
               </div>
 
-              {/* Contenedor Cuadrado Perfecto */}
               <div className="relative rounded-xl overflow-hidden bg-slate-950 w-full aspect-square border border-slate-800/80 flex items-center justify-center">
                 <div id={containerId} className="w-full h-full absolute inset-0" />
-                
                 {!scanning && !error && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-950/95 z-10">
                     <div className="w-12 h-12 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
@@ -446,49 +388,31 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
               </div>
 
               {scanning ? (
-                <button 
-                  onClick={() => void stopScanning()} 
-                  className="w-full mt-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700/80 text-slate-200 text-xs font-medium flex items-center justify-center gap-2 border border-slate-700 transition-all"
-                >
+                <button onClick={() => void stopScanning()} className="w-full mt-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700/80 text-slate-200 text-xs font-medium flex items-center justify-center gap-2 border border-slate-700 transition-all">
                   <Pause size={14} className="text-amber-400" /> Pausar Cámara
                 </button>
               ) : (
-                <button 
-                  onClick={startScanning} 
-                  className="w-full mt-3 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 text-xs font-medium flex items-center justify-center gap-2 border border-cyan-500/30 transition-all"
-                >
+                <button onClick={startScanning} className="w-full mt-3 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 text-xs font-medium flex items-center justify-center gap-2 border border-cyan-500/30 transition-all">
                   <Play size={14} /> Reanudar Cámara
                 </button>
               )}
             </div>
 
-            {/* Ingreso Manual */}
             <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-xl backdrop-blur-md">
               <div className="flex items-center gap-2 mb-2">
                 <Keyboard size={16} className="text-cyan-400" />
                 <h3 className="text-xs font-semibold text-white">Ingreso Manual de Código</h3>
               </div>
               <form onSubmit={handleManualSubmit} className="flex gap-2">
-                <input
-                  value={manualCode}
-                  onChange={e => setManualCode(e.target.value)}
-                  placeholder="Ej: TKT-XYZ123"
-                  className="input-field text-xs font-mono uppercase flex-1"
-                />
-                <button 
-                  type="submit" 
-                  disabled={manualLoading || !manualCode.trim()} 
-                  className="btn-primary text-xs px-4 flex items-center justify-center shrink-0 font-medium"
-                >
+                <input value={manualCode} onChange={e => setManualCode(e.target.value)} placeholder="Ej: TKT-XYZ123" className="input-field text-xs font-mono uppercase flex-1" />
+                <button type="submit" disabled={manualLoading || !manualCode.trim()} className="btn-primary text-xs px-4 flex items-center justify-center shrink-0 font-medium">
                   {manualLoading ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
                 </button>
               </form>
             </div>
           </div>
 
-          {/* Estadísticas, Historial y Búsqueda */}
           <div className="space-y-4">
-            
             <div className="grid grid-cols-2 gap-3">
               <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 text-center shadow-lg">
                 <p className="text-2xl font-black text-emerald-400">{validCount}</p>
@@ -534,10 +458,7 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
             </div>
 
             <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-xl backdrop-blur-md">
-              <button 
-                onClick={() => setShowSearch(!showSearch)} 
-                className="w-full flex items-center justify-between text-left focus:outline-none"
-              >
+              <button onClick={() => setShowSearch(!showSearch)} className="w-full flex items-center justify-between text-left focus:outline-none">
                 <h3 className="text-xs font-semibold text-white flex items-center gap-2">
                   <Search size={16} className="text-cyan-400" /> Búsqueda por Nombre (Caso Extremo)
                 </h3>
@@ -549,12 +470,7 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
                   <form onSubmit={(e) => { e.preventDefault(); handleSearch(); }} className="flex gap-2">
                     <div className="relative flex-1">
                       <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                      <input
-                        value={searchQuery}
-                        onChange={e => setSearchQuery(e.target.value)}
-                        placeholder="Nombre o apellido..."
-                        className="input-field pl-8 text-xs w-full"
-                      />
+                      <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Nombre o apellido..." className="input-field pl-8 text-xs w-full" />
                     </div>
                     <button type="submit" disabled={searchLoading} className="btn-primary text-xs px-3 py-1.5 shrink-0">
                       {searchLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
@@ -570,18 +486,11 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
                             <p className="text-[10px] text-slate-500 font-mono">Código: {r.code}</p>
                           </div>
                           {r.status === 'used' ? (
-                            <span className="px-2 py-1 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20 text-[10px] font-medium shrink-0">
-                              Ingresó
-                            </span>
+                            <span className="px-2 py-1 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20 text-[10px] font-medium shrink-0">Ingresó</span>
                           ) : r.status === 'cancelled' ? (
-                            <span className="px-2 py-1 rounded bg-red-500/10 text-red-300 border border-red-500/20 text-[10px] font-medium shrink-0">
-                              Cancelada
-                            </span>
+                            <span className="px-2 py-1 rounded bg-red-500/10 text-red-300 border border-red-500/20 text-[10px] font-medium shrink-0">Cancelada</span>
                           ) : (
-                            <button 
-                              onClick={() => markEntered(r.ticket_id)} 
-                              className="px-2.5 py-1 rounded bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 text-[10px] font-medium transition-all shrink-0"
-                            >
+                            <button onClick={() => markEntered(r.ticket_id)} className="px-2.5 py-1 rounded bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 text-[10px] font-medium transition-all shrink-0">
                               Registrar Ingreso
                             </button>
                           )}
@@ -596,10 +505,8 @@ export default function ValidatorScanner({ validatorData, onLogout }: Props) {
                 </div>
               )}
             </div>
-
           </div>
         </div>
-
       </div>
     </div>
   );
