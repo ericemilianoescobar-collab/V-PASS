@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { X, AlertCircle, Loader2, Plus, UserPlus, Ticket as TicketIcon, Lock, Upload, HelpCircle } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { X, AlertCircle, Loader2, Plus, UserPlus, Ticket as TicketIcon, Lock, Upload, HelpCircle, DollarSign } from 'lucide-react';
 import { supabase, type Agency, type Event } from '@/lib/supabase';
 import { generateTicketCode } from '@/lib/constants';
 import { downloadTicketPDF, downloadTicketImage } from '@/lib/ticketArt';
@@ -28,10 +28,16 @@ export function CreateEventModal({ agencyId, onClose, onCreated }: { agencyId: s
   const [amPm, setAmPm] = useState<'AM' | 'PM'>('PM');
   const [location, setLocation] = useState('');
   const [bgImageUrl, setBgImageUrl] = useState('');
+  const [imageAspect, setImageAspect] = useState<number>(16 / 9); // Proporción dinámica adaptativa
   const [uploadingImage, setUploadingImage] = useState(false);
   const [qrPosX, setQrPosX] = useState(50);
   const [qrPosY, setQrPosY] = useState(50);
   const [qrSize, setQrSize] = useState(30);
+  
+  // Nuevos estados financieros (Solo para el organizador)
+  const [precioEntrada, setPrecioEntrada] = useState('');
+  const [cantidadEstimada, setCantidadEstimada] = useState('');
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -48,10 +54,22 @@ export function CreateEventModal({ agencyId, onClose, onCreated }: { agencyId: s
       const filePath = `event-bg/${fileName}`;
 
       const { error: uploadErr } = await supabase.storage.from('event-assets').upload(filePath, file);
+      
+      const processImage = (url: string) => {
+        setBgImageUrl(url);
+        const img = new Image();
+        img.src = url;
+        img.onload = () => {
+          if (img.naturalWidth && img.naturalHeight) {
+            setImageAspect(img.naturalWidth / img.naturalHeight);
+          }
+        };
+      };
+
       if (uploadErr) {
         const reader = new FileReader();
         reader.onloadend = () => {
-          setBgImageUrl(reader.result as string);
+          processImage(reader.result as string);
           setUploadingImage(false);
         };
         reader.readAsDataURL(file);
@@ -59,7 +77,7 @@ export function CreateEventModal({ agencyId, onClose, onCreated }: { agencyId: s
       }
 
       const { data: publicURLData } = supabase.storage.from('event-assets').getPublicUrl(filePath);
-      setBgImageUrl(publicURLData.publicUrl);
+      processImage(publicURLData.publicUrl);
     } catch (err: any) {
       setError('Error al subir la imagen: ' + err.message);
     } finally {
@@ -83,6 +101,8 @@ export function CreateEventModal({ agencyId, onClose, onCreated }: { agencyId: s
       qr_pos_x: qrPosX,
       qr_pos_y: qrPosY,
       qr_size: qrSize,
+      price: parseFloat(precioEntrada) || 0,
+      estimated_tickets: parseInt(cantidadEstimada) || 0,
       locked: true,
     }).select().single();
 
@@ -93,6 +113,8 @@ export function CreateEventModal({ agencyId, onClose, onCreated }: { agencyId: s
     }
     onCreated(data as Event);
   };
+
+  const gananciaProyectada = (parseFloat(precioEntrada) || 0) * (parseInt(cantidadEstimada) || 0);
 
   return (
     <ModalShell title="Crear evento" onClose={onClose} wide>
@@ -123,6 +145,47 @@ export function CreateEventModal({ agencyId, onClose, onCreated }: { agencyId: s
           <input value={location} onChange={e => setLocation(e.target.value)} className="input-field" placeholder="Lugar del evento" />
         </div>
 
+        {/* SECCIÓN FINANCIERA / MATEMÁTICA PARA EL ORGANIZADOR */}
+        <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
+          <div className="flex items-center gap-2">
+            <DollarSign size={16} className="text-cyan-400" />
+            <h4 className="text-xs font-bold text-white uppercase tracking-wider">Control Financiero (Solo para el Organizador)</h4>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Precio de la entrada ($ / S/.)</label>
+              <input 
+                type="number" 
+                step="0.01" 
+                min="0"
+                value={precioEntrada} 
+                onChange={e => setPrecioEntrada(e.target.value)} 
+                className="input-field text-xs" 
+                placeholder="Ej. 25.00" 
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Entradas estimadas</label>
+              <input 
+                type="number" 
+                min="0"
+                value={cantidadEstimada} 
+                onChange={e => setCantidadEstimada(e.target.value)} 
+                className="input-field text-xs" 
+                placeholder="Ej. 100" 
+              />
+            </div>
+          </div>
+          {gananciaProyectada > 0 && (
+            <div className="flex justify-between items-center text-xs pt-1 border-t border-slate-800 text-slate-300">
+              <span>Ganancia Proyectada:</span>
+              <span className="text-emerald-400 font-bold text-sm">
+                {new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN' }).format(gananciaProyectada)}
+              </span>
+            </div>
+          )}
+        </div>
+
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-1">Imagen de fondo del ticket</label>
           <div className="flex items-center gap-3">
@@ -141,24 +204,30 @@ export function CreateEventModal({ agencyId, onClose, onCreated }: { agencyId: s
           />
         </div>
 
+        {/* PREVISUALIZACIÓN ADAPTADA AL ASPECT RATIO REAL DE LA IMAGEN */}
         <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
-          <p className="text-xs font-semibold text-slate-400">Previsualización en vivo:</p>
+          <p className="text-xs font-semibold text-slate-400">Previsualización en vivo (Proporción real):</p>
           <div 
-            className="relative h-40 rounded-lg bg-slate-950 overflow-hidden flex items-center justify-center border border-slate-800 bg-cover bg-center"
-            style={bgImageUrl ? { backgroundImage: `url(${bgImageUrl})` } : {}}
+            className="relative w-full rounded-lg bg-slate-950 overflow-hidden flex items-center justify-center border border-slate-800 shadow-inner"
+            style={{ aspectRatio: imageAspect }}
           >
-            <div className="absolute inset-0 bg-black/40" />
+            {bgImageUrl ? (
+              <img src={bgImageUrl} alt="Fondo Ticket" className="w-full h-full object-cover" />
+            ) : (
+              <div className="text-slate-500 text-xs py-10">Sube una imagen para ver la previsualización</div>
+            )}
+            <div className="absolute inset-0 bg-black/30 pointer-events-none" />
             <div 
-              className="absolute bg-white rounded-lg p-1.5 shadow-lg"
+              className="absolute bg-white rounded-lg p-1.5 shadow-lg flex items-center justify-center"
               style={{
                 left: `${qrPosX}%`,
                 top: `${qrPosY}%`,
                 transform: 'translate(-50%, -50%)',
-                width: `${qrSize * 1.5}px`,
-                height: `${qrSize * 1.5}px`,
+                width: `${qrSize * 1.2}%`,
+                height: `${qrSize * 1.2}%`,
               }}
             >
-              <div className="w-full h-full bg-slate-900 rounded flex items-center justify-center text-[8px] text-white">QR</div>
+              <div className="w-full h-full bg-slate-900 rounded flex items-center justify-center text-[8px] text-white font-bold">QR</div>
             </div>
           </div>
         </div>
@@ -242,7 +311,6 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [lastTicket, setLastTicket] = useState<{ code: string; attendeeName: string; guestPhone: string } | null>(null);
-  const [actionLoading, setActionLoading] = useState<string>('');
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -297,40 +365,6 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
     window.open(link, '_blank');
   };
 
-  const handlePDF = async () => {
-    if (!lastTicket) return;
-    setActionLoading('pdf');
-    await downloadTicketPDF({
-      code: lastTicket.code,
-      attendeeName: lastTicket.attendeeName,
-      eventName: event.name,
-      eventDate: event.event_date,
-      eventTime: event.event_time,
-      amPm: event.am_pm,
-      location: event.location,
-    });
-    setActionLoading('');
-  };
-
-  const handleImage = async () => {
-    if (!lastTicket) return;
-    setActionLoading('img');
-    await downloadTicketImage({
-      code: lastTicket.code,
-      attendeeName: lastTicket.attendeeName,
-      eventName: event.name,
-      eventDate: event.event_date,
-      eventTime: event.event_time,
-      amPm: event.am_pm,
-      location: event.location,
-      bgImageUrl: event.bg_image_url,
-      qrPosX: event.qr_pos_x,
-      qrPosY: event.qr_pos_y,
-      qrSize: event.qr_size,
-    });
-    setActionLoading('');
-  };
-
   return (
     <ModalShell title="Agregar invitado" onClose={onClose}>
       {error && <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm"><AlertCircle size={16} /> {error}</div>}
@@ -356,17 +390,9 @@ export function AddGuestModal({ event, onClose, onAdded }: { event: Event; onClo
             <p className="font-semibold text-white">{lastTicket.attendeeName}</p>
           </div>
           <p className="text-xs text-slate-500 font-mono mb-3">Código: {lastTicket.code} {lastTicket.guestPhone ? `• Tel: ${lastTicket.guestPhone}` : ''}</p>
-          <div className="flex gap-2">
-            <button onClick={handleWhatsApp} className="flex-1 px-3 py-2.5 rounded-xl font-semibold text-sm bg-green-500/10 text-green-300 border border-green-500/20 hover:bg-green-500/20 transition-all flex items-center justify-center gap-1.5">
-              WhatsApp
-            </button>
-            <button onClick={handlePDF} disabled={!!actionLoading} className="flex-1 px-3 py-2.5 rounded-xl font-semibold text-sm bg-red-500/10 text-red-300 border border-red-500/20 hover:bg-red-500/20 transition-all disabled:opacity-40 flex items-center justify-center gap-1.5">
-              {actionLoading === 'pdf' ? <Loader2 size={14} className="animate-spin" /> : 'PDF'}
-            </button>
-            <button onClick={handleImage} disabled={!!actionLoading} className="flex-1 px-3 py-2.5 rounded-xl font-semibold text-sm bg-blue-500/10 text-blue-300 border border-blue-500/20 hover:bg-blue-500/20 transition-all disabled:opacity-40 flex items-center justify-center gap-1.5">
-              {actionLoading === 'img' ? <Loader2 size={14} className="animate-spin" /> : 'Imagen'}
-            </button>
-          </div>
+          <button onClick={handleWhatsApp} className="w-full px-3 py-2.5 rounded-xl font-semibold text-sm bg-green-500/10 text-green-300 border border-green-500/20 hover:bg-green-500/20 transition-all flex items-center justify-center gap-1.5">
+            Enviar por WhatsApp
+          </button>
         </div>
       )}
     </ModalShell>
@@ -388,6 +414,9 @@ export function ReportModal({ event, agency, onClose }: { event: Event; agency: 
     })();
   }, [event.id]);
 
+  const precioEntrada = (event as any).price || 0;
+  const gananciaTotal = (report?.used_tickets || 0) * precioEntrada;
+
   const handleDownloadPDF = async () => {
     if (!report) return;
     setDownloading(true);
@@ -395,29 +424,31 @@ export function ReportModal({ event, agency, onClose }: { event: Event; agency: 
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     pdf.setFillColor(10, 15, 26); pdf.rect(0, 0, 210, 297, 'F');
     pdf.setTextColor(34, 211, 238); pdf.setFontSize(22); pdf.setFont('helvetica', 'bold');
-    pdf.text('V-PASS — Reporte de Evento', 105, 30, { align: 'center' });
+    pdf.text('V-PASS — Reporte Financiero y de Evento', 105, 25, { align: 'center' });
     pdf.setTextColor(255, 255, 255); pdf.setFontSize(16);
-    pdf.text(report.event_name || event.name, 105, 50, { align: 'center' });
+    pdf.text(report.event_name || event.name, 105, 42, { align: 'center' });
     pdf.setFontSize(12); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(148, 163, 184);
-    pdf.text(`Fecha: ${report.event_date || event.event_date}${report.event_time ? ` - ${report.event_time}${report.am_pm || ''}` : ''}`, 105, 62, { align: 'center' });
-    if (report.location) pdf.text(`Ubicacion: ${report.location}`, 105, 72, { align: 'center' });
-    pdf.setDrawColor(34, 211, 238); pdf.line(30, 85, 180, 85);
+    pdf.text(`Fecha: ${report.event_date || event.event_date}${report.event_time ? ` - ${report.event_time}${report.am_pm || ''}` : ''}`, 105, 52, { align: 'center' });
+    if (report.location) pdf.text(`Ubicacion: ${report.location}`, 105, 60, { align: 'center' });
+    pdf.setDrawColor(34, 211, 238); pdf.line(30, 70, 180, 70);
+    
     pdf.setTextColor(255, 255, 255); pdf.setFontSize(14); pdf.setFont('helvetica', 'bold');
-    let y = 105;
+    let y = 85;
     const rows: [string, string][] = [
+      ['Precio por entrada', `S/. ${precioEntrada.toFixed(2)}`],
       ['Total de entradas generadas', String(report.total_tickets || 0)],
-      ['Personas que ingresaron (escaneadas)', String(report.used_tickets || 0)],
+      ['Personas que ingresaron', String(report.used_tickets || 0)],
       ['Entradas sin usar', String(report.valid_tickets || 0)],
       ['Entradas canceladas', String(report.cancelled_tickets || 0)],
-      ['Total de validaciones', String(report.total_validations || 0)],
+      ['Ganancia Recaudada', `S/. ${gananciaTotal.toFixed(2)}`],
     ];
     for (const [label, val] of rows) {
-      pdf.text(label, 30, y); pdf.text(val, 180, y, { align: 'right' }); y += 12;
+      pdf.text(label, 30, y); pdf.text(val, 180, y, { align: 'right' }); y += 11;
     }
     const pct = report.total_tickets > 0 ? Math.round((report.used_tickets / report.total_tickets) * 100) : 0;
     pdf.text(`Porcentaje de asistencia`, 30, y); pdf.text(`${pct}%`, 180, y, { align: 'right' });
     pdf.setTextColor(34, 211, 238); pdf.setFontSize(12); pdf.text('V-PASS', 105, 280, { align: 'center' });
-    pdf.save(`reporte-${event.name}.pdf`);
+    pdf.save(`reporte-financiero-${event.name}.pdf`);
     setDownloading(false);
   };
 
@@ -432,6 +463,18 @@ export function ReportModal({ event, agency, onClose }: { event: Event; agency: 
             <p className="text-sm text-slate-400">{report.event_date} {report.event_time} {report.am_pm || ''}</p>
             {report.location && <p className="text-sm text-slate-400">{report.location}</p>}
           </div>
+
+          {/* Tarjeta de Resumen Financiero */}
+          <div className="p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-slate-300">Precio por entrada: <span className="text-white font-bold">S/. {precioEntrada.toFixed(2)}</span></p>
+              <p className="text-xs text-slate-300 mt-0.5">Ingresos recaudados (según asistentes):</p>
+            </div>
+            <div className="text-right">
+              <span className="text-2xl font-black text-emerald-400">S/. {gananciaTotal.toFixed(2)}</span>
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <ReportStat label="Entradas generadas" value={report.total_tickets} color="cyan" />
             <ReportStat label="Personas ingresaron" value={report.used_tickets} color="green" />
@@ -455,7 +498,7 @@ export function ReportModal({ event, agency, onClose }: { event: Event; agency: 
             disabled={downloading}
             className="btn-primary w-full flex items-center justify-center gap-2"
           >
-            {downloading ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />} Descargar reporte PDF
+            {downloading ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />} Descargar reporte financiero PDF
           </button>
         </div>
       ) : (

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Calendar, MapPin, FileText, Image as ImageIcon, AlertCircle, Loader2 } from 'lucide-react';
+import { Calendar, MapPin, AlertCircle, Loader2, QrCode } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import VPassLogo from '@/components/VPassLogo';
 
@@ -11,7 +11,6 @@ export default function TicketView({ code }: Props) {
   const [ticket, setTicket] = useState<any>(null);
   const [event, setEvent] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
     const fetchTicketData = async () => {
@@ -47,98 +46,6 @@ export default function TicketView({ code }: Props) {
 
     fetchTicketData();
   }, [code]);
-
-  const downloadImage = async () => {
-    if (!ticket || !event) return;
-    setActionLoading(true);
-    try {
-      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${ticket.code}`;
-      const res = await fetch(qrUrl);
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `Entrada-${ticket.attendee_name || 'invitado'}-${ticket.code}.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      alert("No se pudo descargar la imagen.");
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const downloadPDF = () => {
-    if (!ticket || !event) return;
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert("Por favor, permite las ventanas emergentes para generar el PDF.");
-      return;
-    }
-
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${ticket.code}`;
-    const bgImage = event.bg_image_url || '';
-
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Entrada - ${ticket.attendee_name}</title>
-          <style>
-            body { font-family: Arial, sans-serif; background: #090d16; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-            .ticket-card {
-              position: relative;
-              width: 380px;
-              border-radius: 24px;
-              overflow: hidden;
-              border: 2px solid #38bdf8;
-              box-shadow: 0 20px 40px rgba(0,0,0,0.9);
-              background: ${bgImage ? `url(${bgImage}) center/cover no-repeat` : '#1e293b'};
-              text-align: center;
-              padding: 35px 20px;
-            }
-            .overlay {
-              position: absolute;
-              inset: 0;
-              background: rgba(15, 23, 42, 0.82);
-              z-index: 1;
-            }
-            .content {
-              position: relative;
-              z-index: 2;
-            }
-            h2 { color: #38bdf8; margin: 0 0 5px 0; font-size: 20px; text-transform: uppercase; letter-spacing: 1px; }
-            .event-name { font-size: 16px; color: #cbd5e1; margin-bottom: 20px; font-weight: bold; }
-            .qr-container { background: #fff; padding: 12px; border-radius: 16px; display: inline-block; margin-bottom: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.6); }
-            .qr-container img { width: 160px; height: 160px; display: block; }
-            .attendee { font-size: 22px; font-weight: bold; color: #fff; margin: 10px 0 5px 0; }
-            .details { font-size: 13px; color: #94a3b8; margin-bottom: 15px; }
-            .code-badge { font-family: monospace; background: #0f172a; border: 1px solid rgba(56, 189, 248, 0.4); padding: 8px 14px; border-radius: 8px; color: #38bdf8; font-size: 13px; display: inline-block; }
-          </style>
-        </head>
-        <body>
-          <div class="ticket-card">
-            ${bgImage ? '<div class="overlay"></div>' : ''}
-            <div class="content">
-              <h2>V-PASS TICKET</h2>
-              <div class="event-name">${event.name}</div>
-              <div class="qr-container">
-                <img src="${qrUrl}" />
-              </div>
-              <div class="attendee">${ticket.attendee_name || 'Invitado'}</div>
-              <div class="details">📅 ${event.event_date || ''} ${event.event_time ? `• ${event.event_time}${event.am_pm || ''}` : ''} | 📍 ${event.location || 'Por confirmar'}</div>
-              <div class="code-badge">Código: ${ticket.code}</div>
-            </div>
-          </div>
-          <script>
-            window.onload = function() { window.print(); }
-          </script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-  };
 
   if (loading) {
     return (
@@ -191,7 +98,7 @@ export default function TicketView({ code }: Props) {
 
           <div className="relative z-10 space-y-4">
             <div>
-              <span className="text-[10px] font-bold uppercase tracking-widest text-cyan-400">V-PASS TICKET</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-cyan-400">V-PASS TICKET DIGITAL</span>
               <h2 className="text-lg font-extrabold text-white mt-1 text-shadow">{event.name}</h2>
             </div>
 
@@ -223,27 +130,16 @@ export default function TicketView({ code }: Props) {
               </span>
             </div>
 
-            <div className="flex gap-2 pt-2">
-              <button 
-                onClick={downloadImage} 
-                disabled={actionLoading}
-                className="btn-secondary flex-1 text-xs py-2.5 flex items-center justify-center gap-1.5 shadow-md"
-              >
-                <ImageIcon size={14} /> Imagen
-              </button>
-              <button 
-                onClick={downloadPDF} 
-                disabled={actionLoading}
-                className="btn-primary flex-1 text-xs py-2.5 flex items-center justify-center gap-1.5 shadow-md"
-              >
-                <FileText size={14} /> PDF
-              </button>
+            <div className="pt-2">
+              <div className="w-full py-2.5 px-4 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-medium flex items-center justify-center gap-2">
+                <QrCode size={16} /> Pase válido solo en pantalla
+              </div>
             </div>
           </div>
         </div>
 
         <p className="text-center text-[11px] text-slate-500 mt-4">
-          Presenta este código QR en la entrada del evento. No lo compartas con nadie.
+          Muestra este código QR directamente desde este enlace en la puerta del evento.
         </p>
       </div>
     </div>
