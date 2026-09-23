@@ -5,12 +5,13 @@ import AgencyDashboard from '@/pages/AgencyDashboard';
 import TicketView from '@/pages/TicketView';
 import ValidatorLogin from '@/pages/ValidatorLogin';
 import ValidatorScanner from '@/pages/ValidatorScanner';
-import { supabase, type Agency } from '@/lib/supabase';
+import { supabase, type Agency, type Validator, type Event } from '@/lib/supabase';
 
 export default function App() {
   const [route, setRoute] = useState<string>('home');
   const [agency, setAgency] = useState<Agency | null>(null);
   const [ticketCode, setTicketCode] = useState<string | null>(null);
+  const [validatorSession, setValidatorSession] = useState<{ validator: Validator; event: Event } | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
@@ -89,11 +90,24 @@ export default function App() {
   }
 
   if (route === 'validator-login') {
-    return <ValidatorLogin navigate={(r) => setRoute(r)} />;
+    return (
+      <ValidatorLogin 
+        navigate={(r) => setRoute(r)} 
+        setValidatorSession={(val, ev) => {
+          setValidatorSession({ validator: val, event: ev });
+        }} 
+      />
+    );
   }
 
-  if (route === 'validator-scanner') {
-    return <ValidatorScanner navigate={(r) => setRoute(r)} />;
+  if (route === 'validator-scanner' && validatorSession) {
+    return (
+      <ValidatorScanner 
+        navigate={(r) => setRoute(r)} 
+        validator={validatorSession.validator} 
+        event={validatorSession.event} 
+      />
+    );
   }
 
   return <LandingPage navigate={(r) => setRoute(r)} />;
