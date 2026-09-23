@@ -12,11 +12,11 @@ export default function ValidatorLogin({ navigate, setValidatorSession }: Props)
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
 
-  const handleLogin = async (eventForm: React.FormEvent) => {
-    eventForm.preventDefault();
-    setError('');
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage('');
     setLoading(true);
 
     try {
@@ -24,47 +24,48 @@ export default function ValidatorLogin({ navigate, setValidatorSession }: Props)
       const cleanPass = password.trim();
 
       if (!cleanUser || !cleanPass) {
-        throw new Error('Por favor ingresa usuario y contraseña.');
+        throw new Error('Ingresa tu usuario y contraseña.');
       }
 
-      // Consultamos la tabla validators usando la columna email (que contiene el usuario)
-      const { data: validatorsList, error: valError } = await supabase
+      // Consulta directa a la tabla validators usando email y password_hash
+      const { data, error: queryError } = await supabase
         .from('validators')
         .select('*')
         .eq('email', cleanUser)
         .eq('password_hash', cleanPass);
 
-      if (valError) {
-        console.error('Error de Supabase:', valError);
+      if (queryError) {
         throw new Error('Error al conectar con la base de datos.');
       }
 
-      if (!validatorsList || validatorsList.length === 0) {
+      if (!data || data.length === 0) {
         throw new Error('Usuario o contraseña incorrectos.');
       }
 
-      const validatorData = validatorsList[0];
+      const validatorData = data[0];
 
       if (validatorData.active === false) {
         throw new Error('Este validador se encuentra inactivo.');
       }
 
-      // Buscamos el evento asociado en la tabla events
-      const { data: eventData, error: eventError } = await supabase
+      // Obtenemos el evento asociado
+      const { data: eventData, error: eventQueryError } = await supabase
         .from('events')
         .select('*')
         .eq('id', validatorData.event_id)
         .single();
 
-      if (eventError || !eventData) {
-        throw new Error('No se encontró el evento asociado a este validador.');
+      if (eventQueryError || !eventData) {
+        throw new Error('No se encontró el evento asignado a este validador.');
       }
 
-      // Guardamos la sesión y redirigimos al escáner
+      // Todo correcto, guardamos la sesión y entramos
       setValidatorSession(validatorData as Validator, eventData as Event);
       navigate('validator-scanner');
     } catch (err: any) {
-      setError(err.message || 'Ocurrió un error al iniciar sesión.');
+      // Nos aseguramos de capturar el texto del mensaje de forma segura
+      const message = typeof err?.message === 'string' ? err.message : 'Ocurrió un error inesperado al iniciar sesión.';
+      setErrorMessage(message);
     } finally {
       setLoading(false);
     }
@@ -96,10 +97,10 @@ export default function ValidatorLogin({ navigate, setValidatorSession }: Props)
             <p className="text-xs text-slate-400">Ingresa las credenciales asignadas para tu puesto de control</p>
           </div>
 
-          {error && (
+          {errorMessage && (
             <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm animate-fade-in">
               <AlertCircle size={18} className="shrink-0" />
-              <span>{error}</span>
+              <span>{errorMessage}</span>
             </div>
           )}
 
