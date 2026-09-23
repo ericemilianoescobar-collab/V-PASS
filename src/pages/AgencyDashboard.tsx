@@ -2,12 +2,12 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   LogOut, Calendar, MapPin, Users, QrCode, Ticket as TicketIcon,
   BarChart3, Loader2, AlertCircle, CheckCircle2, Clock, Plus,
-  UserPlus, ChevronRight, Lock, MessageCircle, X, FileText, Image as ImageIcon, Trash2, History, ShieldAlert
+  UserPlus, ChevronRight, Lock, MessageCircle, X, FileText, Image as ImageIcon, Trash2, History, ShieldAlert, Key
 } from 'lucide-react';
 import VPassLogo from '@/components/VPassLogo';
 import { supabase, type Agency, type Event, type Validator, type Ticket } from '@/lib/supabase';
 import { PLAN_FEATURES, generateTicketCode } from '@/lib/constants';
-import { CreateEventModal, CreateValidatorModal, AddGuestModal, ReportModal } from '@/components/DashboardModals';
+import { CreateEventModal, AddGuestModal, ReportModal } from '@/components/DashboardModals';
 
 interface Props {
   agency: Agency;
@@ -27,7 +27,6 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
   const [supportTickets, setSupportTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateEvent, setShowCreateEvent] = useState(false);
-  const [showCreateValidator, setShowCreateValidator] = useState(false);
   const [showAddGuest, setShowAddGuest] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [selectedTicketForModal, setSelectedTicketForModal] = useState<Ticket | null>(null);
@@ -70,6 +69,7 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
     const currentActive = activeList.length > 0 ? activeList[0] : null;
     if (currentActive) {
       setActiveEvent(currentActive);
+      await ensureDefaultValidators(currentActive.id);
       fetchValidators(currentActive.id);
       fetchTickets(currentActive.id);
     } else {
@@ -83,8 +83,32 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
 
   useEffect(() => { fetchEvents(); }, [fetchEvents]);
 
+  // Asegura que siempre existan los 5 validadores predeterminados para el evento
+  const ensureDefaultValidators = async (eventId: string) => {
+    const { data: existing } = await supabase.from('validators').select('*').eq('event_id', eventId);
+    const currentList = existing || [];
+
+    if (currentList.length < 5) {
+      for (let i = 1; i <= 5; i++) {
+        const valName = `Validador ${i}`;
+        const exists = currentList.some(v => v.name === valName);
+        if (!exists) {
+          const defaultUser = `validador${i}_${eventId.substring(0, 4)}`;
+          const defaultPass = Math.random().toString(36.substring(2, 8));
+          await supabase.from('validators').insert({
+            event_id: eventId,
+            name: valName,
+            email: defaultUser,
+            password_hash: defaultPass,
+            active: true
+          });
+        }
+      }
+    }
+  };
+
   const fetchValidators = async (eventId: string) => {
-    const { data } = await supabase.from('validators').select('id, event_id, email, name, active, created_at').eq('event_id', eventId).order('created_at', { ascending: false });
+    const { data } = await supabase.from('validators').select('id, event_id, email, password_hash, name, active, created_at').eq('event_id', eventId).order('name', { ascending: true });
     setValidators((data as Validator[]) || []);
   };
 
@@ -105,10 +129,11 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
     navigate('home');
   };
 
-  const handleEventCreated = (ev: Event) => {
+  const handleEventCreated = async (ev: Event) => {
     setEvents(prev => [ev, ...prev]);
     setActiveEvent(ev);
     setShowCreateEvent(false);
+    await ensureDefaultValidators(ev.id);
     fetchValidators(ev.id);
     fetchTickets(ev.id);
     setTab('event');
@@ -461,7 +486,6 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
               ) : (
                 <div className="space-y-2 max-h-[60vh] overflow-y-auto">
                   {tickets.map(t => {
-                    // Envolvemos el enlace entre < > para evitar que WhatsApp muestre la tarjeta de previsualización (Open Graph)
                     const ticketUrl = `<${window.location.origin}/#ticket/${t.code}>`;
                     const guestPhone = (t as any).guest_phone || '';
                     const eventLocation = activeEvent?.location || 'Por confirmar';
@@ -513,25 +537,43 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
             </div>
           )}
 
-          {/* VALIDATORS TAB */}
+          {/* VALIDATORS TAB (MUESTRA SIEMPRE LOS 5 VALIDADORES FIJOS CON USUARIO Y CONTRASEÑA) */}
           {tab === 'validators' && (
             <div className="space-y-4 animate-fade-in">
-              <div className="flex items-center justify-between">
-                <div><h3 className="text-lg font-bold text-white">Validadores asignados</h3><p className="text-sm text-slate-400">Credenciales para tu personal de puerta</p></div>
+              <div>
+                <h3 className="text-lg font-bold text-white">Validadores asignados</h3>
+                <p className="text-sm text-slate-400">Credenciales de acceso directo para el personal de puerta (5 puestos)</p>
               </div>
+
               {!activeEvent ? (
-                <div className="card p-12 text-center"><Users size={48} className="text-slate-600 mx-auto mb-3" /><p className="text-slate-400">Crea un evento activo primero</p></div>
-              ) : validators.length === 0 ? (
-                <div className="card p-12 text-center"><Users size={48} className="text-slate-600 mx-auto mb-3" /><p className="text-slate-400 mb-4">No hay validadores asignados a este evento.</p></div>
+                <div className="card p-12 text-center">
+                  <Users size={48} className="text-slate-600 mx-auto mb-3" />
+                  <p className="text-slate-400">Crea un evento activo primero para ver los validadores</p>
+                </div>
               ) : (
-                <div className="space-y-2">
-                  {validators.map(v => (
-                    <div key={v.id} className="card p-4 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-cyan-400/10 border border-cyan-400/20 flex items-center justify-center"><Users size={18} className="text-cyan-400" /></div>
-                        <div><p className="font-semibold text-white">{v.name}</p><p className="text-sm text-slate-400">Usuario: {v.email}</p></div>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {validators.map((v) => (
+                    <div key={v.id} className="card p-5 space-y-3 border border-slate-800 bg-slate-900/50 flex flex-col justify-between">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-9 h-9 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+                            <QrCode size={18} />
+                          </div>
+                          <span className="font-bold text-white text-base">{v.name}</span>
+                        </div>
+                        <span className="badge bg-green-500/10 text-green-300 border border-green-500/20 text-xs">Activo</span>
                       </div>
-                      <span className="badge bg-green-500/10 text-green-300">Activo</span>
+
+                      <div className="space-y-2 pt-2 border-t border-slate-800/80 text-xs font-mono">
+                        <div className="flex items-center justify-between bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                          <span className="text-slate-400">Usuario:</span>
+                          <span className="text-cyan-300 font-semibold">{v.email}</span>
+                        </div>
+                        <div className="flex items-center justify-between bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                          <span className="text-slate-400">Contraseña:</span>
+                          <span className="text-green-300 font-semibold">{v.password_hash || '••••••'}</span>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -650,14 +692,13 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
                   {!activeEvent && <p className="text-[11px] text-yellow-400 text-center">Debe haber un evento activo en la agencia.</p>}
                 </form>
 
-                {/* Listado Privado Independiente con el mensaje completo idéntico */}
+                {/* Listado Privado Independiente */}
                 <div className="space-y-2 max-h-48 overflow-y-auto">
                   <p className="text-xs font-semibold text-slate-400">Listado de registros:</p>
                   {supportTickets.length === 0 ? (
                     <p className="text-xs text-slate-500 text-center py-4">No hay registros generados aún.</p>
                   ) : (
                     supportTickets.map(st => {
-                      // Envolvemos el enlace entre < > para anular la tarjeta de vista previa de WhatsApp
                       const ticketUrl = `<${window.location.origin}/#ticket/${st.code}>`;
                       const phone = (st as any).guest_phone || '';
                       const eventLocation = activeEvent?.location || 'Por confirmar';
@@ -699,7 +740,6 @@ export default function AgencyDashboard({ agency, setAgency, navigate }: Props) 
 
       {/* Modales adicionales */}
       {showCreateEvent && <CreateEventModal agencyId={agency.id} onClose={() => setShowCreateEvent(false)} onCreated={handleEventCreated} />}
-      {showCreateValidator && activeEvent && <CreateValidatorModal eventId={activeEvent.id} onClose={() => setShowCreateValidator(false)} onCreated={() => { setShowCreateValidator(false); fetchValidators(activeEvent.id); }} />}
       {showAddGuest && activeEvent && <AddGuestModal event={activeEvent} onClose={() => setShowAddGuest(false)} onAdded={() => fetchTickets(activeEvent.id)} />}
       {showReport && activeEvent && <ReportModal event={activeEvent} agency={agency} onClose={() => setShowReport(false)} />}
       
